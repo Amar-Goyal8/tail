@@ -23,7 +23,7 @@ struct TrimView: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            VideoPlayer(player: player)
+            PlayerView(player: player)
                 .frame(minWidth: 560, minHeight: 315)
                 .cornerRadius(8)
 

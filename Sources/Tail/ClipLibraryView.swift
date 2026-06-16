@@ -2,6 +2,20 @@ import SwiftUI
 import AVKit
 import AppKit
 
+// AppKit AVPlayerView wrapper. SwiftUI's VideoPlayer crashes (_AVKit_SwiftUI
+// SIGABRT) in this SwiftPM-built app; AVPlayerView is stable.
+struct PlayerView: NSViewRepresentable {
+    let player: AVPlayer
+    func makeNSView(context: Context) -> AVPlayerView {
+        let v = AVPlayerView()
+        v.player = player
+        v.controlsStyle = .inline
+        v.videoGravity = .resizeAspect
+        return v
+    }
+    func updateNSView(_ v: AVPlayerView, context: Context) { v.player = player }
+}
+
 // Medal-style clip library: a grid of thumbnail cards. Click a card to watch
 // the clip inline and create / copy its share link.
 struct ClipLibraryView: View {
@@ -27,10 +41,17 @@ struct ClipLibraryView: View {
                     .padding(20)
                 }
             }
+
+            // Inline player overlay (in-app, not a separate window).
+            if let clip = selected {
+                Color.black.opacity(0.6).ignoresSafeArea()
+                    .onTapGesture { selected = nil }
+                ClipDetail(model: model, library: library, clip: clip,
+                           onClose: { selected = nil })
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
         }
-        .sheet(item: $selected) { clip in
-            ClipDetail(model: model, library: library, clip: clip)
-        }
+        .animation(.easeOut(duration: 0.15), value: selected?.id)
     }
 
     private var emptyState: some View {
@@ -100,22 +121,24 @@ private struct ClipDetail: View {
     @ObservedObject var model: AppModel
     @ObservedObject var library: LocalLibrary
     let clip: LocalClip
-    @Environment(\.dismiss) private var dismiss
+    let onClose: () -> Void
 
     @State private var player: AVPlayer
     @State private var link: String?
     @State private var state: LinkState = .idle
     enum LinkState { case idle, creating, copied }
 
-    init(model: AppModel, library: LocalLibrary, clip: LocalClip) {
-        self.model = model; self.library = library; self.clip = clip
+    init(model: AppModel, library: LocalLibrary, clip: LocalClip, onClose: @escaping () -> Void) {
+        self.model = model; self.library = library; self.clip = clip; self.onClose = onClose
         _player = State(initialValue: AVPlayer(url: library.url(for: clip)))
         _link = State(initialValue: clip.link)
     }
 
+    private func close() { player.pause(); onClose() }
+
     var body: some View {
         VStack(spacing: 0) {
-            VideoPlayer(player: player)
+            PlayerView(player: player)
                 .frame(width: 760, height: 428)
                 .background(Color.black)
                 .onAppear { player.play() }
@@ -125,14 +148,18 @@ private struct ClipDetail: View {
                     .font(.system(size: 13, weight: .medium))
                 Spacer()
                 Button(role: .destructive) {
-                    player.pause(); library.delete(clip); dismiss()
+                    library.delete(clip); close()
                 } label: { Image(systemName: "trash") }
                 shareButton
-                Button("Close") { player.pause(); dismiss() }
+                Button("Close") { close() }
             }
             .padding(14)
             .background(Color(red: 0.07, green: 0.07, blue: 0.09))
         }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.1)))
+        .shadow(color: .black.opacity(0.6), radius: 30)
+        .padding(40)
     }
 
     @ViewBuilder private var shareButton: some View {
