@@ -63,9 +63,8 @@ final class ReplayBuffer: @unchecked Sendable {
         // Audio from the same instant onward.
         let aClip = aSnap.filter { CMSampleBufferGetPresentationTimeStamp($0) >= base }
 
-        let p0 = base.seconds
-        let p1 = CMSampleBufferGetPresentationTimeStamp(vClip.last!).seconds
-        log("flush: vframes=\(vClip.count) aframes=\(aClip.count) span=\(String(format: "%.2f", p1 - p0))s")
+        let span = CMSampleBufferGetPresentationTimeStamp(vClip.last!).seconds - base.seconds
+        log("flush: \(vClip.count) video + \(aClip.count) audio frames, \(String(format: "%.1f", span))s")
 
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("tail-\(Int(Date().timeIntervalSince1970)).mp4")

@@ -10,7 +10,7 @@ enum CaptureSource: @unchecked Sendable {
 
 // ScreenCaptureKit capture -> Encoder (video) + ReplayBuffer (audio PCM).
 // Video uses SCK's real PTS so it stays in sync with the audio clock.
-final class CaptureEngine: NSObject, SCStreamOutput, @unchecked Sendable {
+final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
     private let config: Config
     private let encoder: Encoder
     private let buffer: ReplayBuffer
@@ -70,7 +70,7 @@ final class CaptureEngine: NSObject, SCStreamOutput, @unchecked Sendable {
         cfg.sampleRate = config.audioSampleRate
         cfg.channelCount = config.audioChannels
 
-        let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
+        let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
         try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue)
         try await stream.startCapture()
@@ -105,8 +105,51 @@ final class CaptureEngine: NSObject, SCStreamOutput, @unchecked Sendable {
     }
 
     private func handleAudio(_ sampleBuffer: CMSampleBuffer) {
-        guard CMSampleBufferGetNumSamples(sampleBuffer) > 0 else { return }
-        buffer.appendAudio(sampleBuffer)
+        guard CMSampleBufferGetNumSamples(sampleBuffer) > 0,
+              let detached = Self.detach(sampleBuffer) else { return }
+        buffer.appendAudio(detached)
+    }
+
+    // Copy a sample buffer's PCM into a freshly-allocated, SCK-independent one.
+    static func detach(_ sb: CMSampleBuffer) -> CMSampleBuffer? {
+        guard let fmt = CMSampleBufferGetFormatDescription(sb),
+              let src = CMSampleBufferGetDataBuffer(sb) else { return nil }
+        var totalLen = 0
+        guard CMBlockBufferGetDataPointer(src, atOffset: 0, lengthAtOffsetOut: nil,
+                totalLengthOut: &totalLen, dataPointerOut: nil) == kCMBlockBufferNoErr,
+              totalLen > 0 else { return nil }
+
+        var newBlock: CMBlockBuffer?
+        guard CMBlockBufferCreateWithMemoryBlock(allocator: kCFAllocatorDefault, memoryBlock: nil,
+                blockLength: totalLen, blockAllocator: kCFAllocatorDefault, customBlockSource: nil,
+                offsetToData: 0, dataLength: totalLen, flags: 0, blockBufferOut: &newBlock)
+                == kCMBlockBufferNoErr,
+              let newBlock,
+              CMBlockBufferAssureBlockMemory(newBlock) == kCMBlockBufferNoErr else { return nil }
+
+        // Copy src bytes into the new block.
+        let bytes = UnsafeMutableRawPointer.allocate(byteCount: totalLen, alignment: 1)
+        defer { bytes.deallocate() }
+        guard CMBlockBufferCopyDataBytes(src, atOffset: 0, dataLength: totalLen,
+                destination: bytes) == kCMBlockBufferNoErr,
+              CMBlockBufferReplaceDataBytes(with: bytes, blockBuffer: newBlock,
+                offsetIntoDestination: 0, dataLength: totalLen) == kCMBlockBufferNoErr else { return nil }
+
+        let numSamples = CMSampleBufferGetNumSamples(sb)
+        var timing = CMSampleTimingInfo()
+        CMSampleBufferGetSampleTimingInfo(sb, at: 0, timingInfoOut: &timing)
+        var timingArr = [timing]
+        var sizeArr = [totalLen / max(numSamples, 1)]
+        var out: CMSampleBuffer?
+        guard CMSampleBufferCreateReady(allocator: kCFAllocatorDefault, dataBuffer: newBlock,
+                formatDescription: fmt, sampleCount: numSamples, sampleTimingEntryCount: 1,
+                sampleTimingArray: &timingArr, sampleSizeEntryCount: 1, sampleSizeArray: &sizeArr,
+                sampleBufferOut: &out) == noErr else { return nil }
+        return out
+    }
+
+    func stream(_ stream: SCStream, didStopWithError error: Error) {
+        log("STREAM STOPPED: \(error.localizedDescription)")
     }
 
     private func log(_ s: String) {
