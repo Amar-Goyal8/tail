@@ -1,4 +1,10 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // Cloudflare R2 is S3-compatible. Configure via env (see .env.example).
@@ -20,6 +26,9 @@ export const s3 = new S3Client({
 export const keys = {
   video: (id: string) => `clips/${id}.mp4`,
   meta: (id: string) => `clips/${id}.json`,
+  // Per-account index entry pointing at a clip (enables "my clips").
+  userClip: (accountId: string, id: string) => `users/${accountId}/clips/${id}.json`,
+  userPrefix: (accountId: string) => `users/${accountId}/clips/`,
 };
 
 // Public URL for a stored object (used in <video> + OG tags).
@@ -42,6 +51,7 @@ export interface ClipMeta {
   height: number;
   durationSec: number;
   createdAt: string; // ISO
+  accountId?: string; // owner (for "my clips" + delete auth)
 }
 
 export async function putMeta(meta: ClipMeta) {
@@ -63,4 +73,49 @@ export async function getMeta(id: string): Promise<ClipMeta | null> {
   } catch {
     return null;
   }
+}
+
+// Add a clip to an account's index (cheap pointer = the metadata itself).
+export async function addUserClip(accountId: string, meta: ClipMeta) {
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: keys.userClip(accountId, meta.id),
+      ContentType: "application/json",
+      Body: JSON.stringify(meta),
+    })
+  );
+}
+
+// List an account's clips, newest first.
+export async function listUserClips(accountId: string, limit = 100): Promise<ClipMeta[]> {
+  const res = await s3.send(
+    new ListObjectsV2Command({ Bucket: bucket, Prefix: keys.userPrefix(accountId), MaxKeys: limit })
+  );
+  const objs = res.Contents ?? [];
+  const metas = await Promise.all(
+    objs.map(async (o) => {
+      try {
+        const r = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: o.Key! }));
+        return JSON.parse(await r.Body!.transformToString()) as ClipMeta;
+      } catch {
+        return null;
+      }
+    })
+  );
+  return metas
+    .filter((m): m is ClipMeta => !!m)
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
+
+// Delete a clip (video + meta + user index) — only by its owner.
+export async function deleteClip(id: string, accountId: string): Promise<boolean> {
+  const meta = await getMeta(id);
+  if (!meta || meta.accountId !== accountId) return false;
+  await Promise.all([
+    s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: keys.video(id) })),
+    s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: keys.meta(id) })),
+    s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: keys.userClip(accountId, id) })),
+  ]);
+  return true;
 }

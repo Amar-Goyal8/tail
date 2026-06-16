@@ -35,6 +35,7 @@ final class Uploader: @unchecked Sendable {
         var finReq = URLRequest(url: baseURL.appendingPathComponent("api/finalize"))
         finReq.httpMethod = "POST"
         finReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        finReq.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
         finReq.httpBody = try JSONSerialization.data(withJSONObject: [
             "id": info.id, "width": w, "height": h, "durationSec": dur,
         ])
