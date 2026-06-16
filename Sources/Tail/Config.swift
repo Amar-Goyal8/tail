@@ -15,6 +15,12 @@ struct Config {
     var audioChannels: Int = 2
     var audioBitrate: Int = 160_000
 
+    // Backend for upload + share links. Override with TAIL_BACKEND_URL env var
+    // (e.g. http://localhost:3000 for dev, or the deployed Vercel URL).
+    var backendURL: URL = URL(string: ProcessInfo.processInfo.environment["TAIL_BACKEND_URL"]
+        ?? "http://localhost:3000")!
+    var uploadOnClip: Bool = true
+
     var bitrate: Int { bitrateMbps * 1_000_000 }
 
     // Preset toggle: 1440p120 (quality) vs 1080p240 (smoothness).

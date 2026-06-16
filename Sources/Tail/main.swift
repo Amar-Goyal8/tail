@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var buffer: ReplayBuffer!
     private var encoder: Encoder!
     private var capture: CaptureEngine!
+    private var uploader: Uploader!
     private var hotKey: HotKey?
     private var currentSource: CaptureSource?
 
@@ -20,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.buffer.append(sample)
         }
         capture = CaptureEngine(config: config, encoder: encoder, buffer: buffer)
+        uploader = Uploader(baseURL: config.backendURL)
         startCapture(source: nil)
         installHotkey()
         installDebugTrigger()
@@ -42,8 +44,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(srcItem)
         menu.addItem(NSMenuItem(title: "Refresh sources", action: #selector(refreshSources), keyEquivalent: ""))
         menu.addItem(.separator())
+        let up = NSMenuItem(title: "Upload + copy link on clip", action: #selector(toggleUpload), keyEquivalent: "")
+        up.state = config.uploadOnClip ? .on : .off
+        uploadItem = up
+        menu.addItem(up)
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
+    }
+
+    private var uploadItem: NSMenuItem?
+    @objc private func toggleUpload() {
+        config.uploadOnClip.toggle()
+        uploadItem?.state = config.uploadOnClip ? .on : .off
     }
 
     @objc private func refreshSources() { refreshSourceMenu() }
@@ -93,13 +106,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func clip() {
         let buffer = self.buffer!
         let dir = config.saveDir
+        let shouldUpload = config.uploadOnClip
+        let uploader = self.uploader!
         Task.detached {
-            if let url = buffer.flush(to: dir) {
-                await self.notify("Clip saved", url.lastPathComponent)
-            } else {
+            guard let url = buffer.flush(to: dir) else {
                 await self.log("flush failed (buffer empty or no keyframe yet)")
+                return
+            }
+            await self.notify("Clip saved", url.lastPathComponent)
+            guard shouldUpload else { return }
+            do {
+                let link = try await uploader.upload(url)
+                await self.copyAndNotify(link)
+            } catch {
+                await self.log("upload failed: \(error.localizedDescription)")
+                await self.notify("Upload failed", error.localizedDescription)
             }
         }
+    }
+
+    private func copyAndNotify(_ link: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(link, forType: .string)
+        log("share link copied: \(link)")
+        notify("Link copied to clipboard", link)
     }
 
     private func notify(_ title: String, _ body: String) {
