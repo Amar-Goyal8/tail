@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mainWindow = MainWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Theme.registerFonts()
         setupMenu()
         uploader = Uploader(baseURL: config.backendURL)
         clipsClient = ClipsClient(baseURL: config.backendURL)

@@ -27,18 +27,27 @@ struct ClipLibraryView: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.04, green: 0.04, blue: 0.06).ignoresSafeArea()
             if library.clips.isEmpty {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(library.clips) { clip in
-                            ClipCard(model: model, library: library, clip: clip)
-                                .onTapGesture { selected = clip }
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text("CLIPS").font(Theme.display(30)).foregroundStyle(Theme.text)
+                            Text("\(library.clips.count)").font(Theme.ui(14, .semibold))
+                                .foregroundStyle(Theme.primaryHi)
+                                .padding(.horizontal, 8).padding(.vertical, 2)
+                                .background(Capsule().fill(Theme.primary.opacity(0.18)))
+                            Spacer()
+                        }
+                        LazyVGrid(columns: columns, spacing: 18) {
+                            ForEach(library.clips) { clip in
+                                ClipCard(model: model, library: library, clip: clip)
+                                    .onTapGesture { selected = clip }
+                            }
                         }
                     }
-                    .padding(20)
+                    .padding(28)
                 }
             }
 
@@ -55,11 +64,15 @@ struct ClipLibraryView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "film.stack").font(.system(size: 44)).foregroundStyle(.secondary)
-            Text("No clips yet").font(.title3.bold())
+        VStack(spacing: 14) {
+            ZStack {
+                Circle().fill(Theme.primary.opacity(0.14)).frame(width: 88, height: 88)
+                Image(systemName: "square.grid.2x2.fill").font(.system(size: 34))
+                    .foregroundStyle(Theme.primaryHi)
+            }
+            Text("NO CLIPS YET").font(Theme.display(22)).foregroundStyle(Theme.text)
             Text("Press ⌃⌥C while gaming to grab the last 30 seconds.")
-                .foregroundStyle(.secondary)
+                .font(Theme.ui(13)).foregroundStyle(Theme.textDim)
         }
     }
 }
@@ -95,20 +108,20 @@ private struct ClipCard: View {
             .frame(height: 165).clipped()
 
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(clip.filename.replacingOccurrences(of: ".mp4", with: ""))
-                        .font(.system(size: 12, weight: .medium)).lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(clip.link != nil ? "Shared clip" : "Local clip")
+                        .font(Theme.ui(13, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
                     Text(clip.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption2).foregroundStyle(.secondary)
+                        .font(Theme.ui(11)).foregroundStyle(Theme.textDim)
                 }
                 Spacer()
             }
-            .padding(10)
-            .background(Color(red: 0.09, green: 0.09, blue: 0.12))
+            .padding(12)
+            .background(Theme.card)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(hover ? 0.18 : 0.06)))
-        .shadow(color: .black.opacity(hover ? 0.5 : 0.2), radius: hover ? 14 : 6, y: 4)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.R.lg))
+        .overlay(RoundedRectangle(cornerRadius: Theme.R.lg).stroke(hover ? Theme.primary.opacity(0.5) : Theme.stroke))
+        .shadow(color: (hover ? Theme.primary : .black).opacity(hover ? 0.4 : 0.25), radius: hover ? 16 : 7, y: 5)
         .scaleEffect(hover ? 1.015 : 1)
         .animation(.easeOut(duration: 0.15), value: hover)
         .onHover { hover = $0 }
@@ -143,57 +156,56 @@ private struct ClipDetail: View {
                 .background(Color.black)
                 .onAppear { player.play() }
 
-            HStack(spacing: 12) {
-                Text(clip.filename.replacingOccurrences(of: ".mp4", with: ""))
-                    .font(.system(size: 13, weight: .medium))
+            HStack(spacing: 10) {
+                Text(clip.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(Theme.ui(12)).foregroundStyle(Theme.textDim)
                 Spacer()
-                Button(role: .destructive) {
-                    library.delete(clip); close()
-                } label: { Image(systemName: "trash") }
+                Button { library.delete(clip); close() } label: {
+                    Image(systemName: "trash")
+                }.buttonStyle(TailButtonStyle(kind: .ghost))
                 shareButton
-                Button("Close") { close() }
+                Button { close() } label: { Text("Close") }
+                    .buttonStyle(TailButtonStyle(kind: .ghost))
             }
             .padding(14)
-            .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+            .background(Theme.surface)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(.white.opacity(0.1)))
-        .shadow(color: .black.opacity(0.6), radius: 30)
+        .frame(width: 760)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.R.lg))
+        .overlay(RoundedRectangle(cornerRadius: Theme.R.lg).stroke(Theme.strokeHi))
+        .shadow(color: .black.opacity(0.6), radius: 40)
         .padding(40)
     }
 
     @ViewBuilder private var shareButton: some View {
         if let link {
             Button {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(link, forType: .string)
-                state = .copied
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { if state == .copied { state = .idle } }
+                copyLink(link)
             } label: {
                 Label(state == .copied ? "Link copied" : "Copy link",
-                      systemImage: state == .copied ? "checkmark" : "doc.on.doc")
-                    .frame(minWidth: 110)
+                      systemImage: state == .copied ? "checkmark" : "link")
+                    .frame(minWidth: 96)
             }
-            .buttonStyle(.borderedProminent).tint(state == .copied ? .green : .accentColor)
+            .buttonStyle(TailButtonStyle(kind: state == .copied ? .primary : .action))
         } else {
             Button {
                 state = .creating
                 Task {
                     let made = await model.createLink(for: clip)
                     link = made
-                    state = .idle
-                    if let made { // auto-copy on first create
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(made, forType: .string)
-                        state = .copied
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { if state == .copied { state = .idle } }
-                    }
+                    if let made { copyLink(made) } else { state = .idle }
                 }
             } label: {
                 Label(state == .creating ? "Creating…" : "Create link", systemImage: "link.badge.plus")
-                    .frame(minWidth: 110)
+                    .frame(minWidth: 96)
             }
-            .buttonStyle(.borderedProminent).disabled(state == .creating)
+            .buttonStyle(TailButtonStyle(kind: .action)).disabled(state == .creating)
         }
+    }
+
+    private func copyLink(_ s: String) {
+        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string)
+        state = .copied
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { if state == .copied { state = .idle } }
     }
 }

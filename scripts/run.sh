@@ -16,6 +16,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Tail"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 [ -f Resources/Tail.icns ] && cp Resources/Tail.icns "$APP/Contents/Resources/Tail.icns"
+[ -d Resources/fonts ] && cp -R Resources/fonts "$APP/Contents/Resources/fonts"
 
 echo "==> ad-hoc sign"
 codesign --force --deep --sign - "$APP"
