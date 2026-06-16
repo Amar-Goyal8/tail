@@ -12,9 +12,10 @@ BIN=$(swift build -c "$CONFIG" --show-bin-path)/Tail
 APP="build/Tail.app"
 echo "==> bundling $APP"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Tail"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+[ -f Resources/Tail.icns ] && cp Resources/Tail.icns "$APP/Contents/Resources/Tail.icns"
 
 echo "==> ad-hoc sign"
 codesign --force --deep --sign - "$APP"

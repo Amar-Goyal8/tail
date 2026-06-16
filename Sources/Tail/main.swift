@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastClipURL: URL?
     private let trimController = TrimWindowController()
     private let libraryController = LibraryWindowController()
+    private let settingsController = SettingsWindowController()
+    private let onboardingController = OnboardingWindowController()
     private var clipsClient: ClipsClient!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -29,6 +31,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshSourceMenu()
         refreshPlan()
         buildQualityMenu()
+        onboardingController.showIfNeeded(openScreenRecording: openScreenRecordingSettings)
+    }
+
+    private func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     // (Re)build encoder + buffer + capture for the current config (resolution/fps).
@@ -53,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Trim & share last clip…",
                                 action: #selector(trimLast), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "My clips…", action: #selector(showLibrary), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ","))
         menu.addItem(.separator())
         let srcItem = NSMenuItem(title: "Capture source", action: nil, keyEquivalent: "")
         srcItem.submenu = sourceMenu
@@ -211,6 +221,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func showLibrary() {
         libraryController.show(client: clipsClient)
+    }
+
+    @objc private func showSettings() {
+        let model = SettingsModel(uploadOnClip: config.uploadOnClip,
+                                  bufferSeconds: config.bufferSeconds,
+                                  accountId: Account.token,
+                                  backendURL: config.backendURL.absoluteString,
+                                  plan: plan)
+        model.onUploadChange = { [weak self] on in
+            self?.config.uploadOnClip = on
+            self?.uploadItem?.state = on ? .on : .off
+        }
+        model.onBufferChange = { [weak self] secs in
+            guard let self else { return }
+            self.config.bufferSeconds = secs
+            Task { @MainActor in
+                try? await self.capture.stop()
+                self.buildPipeline()
+                self.startCapture(source: self.currentSource)
+            }
+        }
+        model.onOpenSaveFolder = { [weak self] in
+            guard let self else { return }
+            try? FileManager.default.createDirectory(at: self.config.saveDir, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(self.config.saveDir)
+        }
+        settingsController.show(model: model)
     }
 
     @objc private func trimLast() {

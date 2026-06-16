@@ -10,6 +10,8 @@
     <string>com.tail.clipper</string>
     <key>CFBundleExecutable</key>
     <string>Tail</string>
+    <key>CFBundleIconFile</key>
+    <string>Tail</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
