@@ -203,9 +203,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self.log("flush failed (buffer empty or no keyframe yet)")
                 return
             }
+            let game = await MainActor.run { self.model.sourceLabel }
             await MainActor.run {
                 self.lastClipURL = url
-                self.model.library?.add(url)        // show in library; link created on demand
+                self.model.library?.add(url, game: game)   // show in library; link created on demand
                 self.model.clipsRefreshToken += 1
             }
             await self.notify("Clip saved", url.lastPathComponent)

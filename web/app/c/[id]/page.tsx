@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getMeta, keys, publicUrl } from "@/lib/r2";
+import { getMeta, keys, publicUrl, bumpViews } from "@/lib/r2";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -38,6 +38,7 @@ export default async function ClipPage({ params }: Props) {
   const { id } = await params;
   const meta = await getMeta(id);
   if (!meta) notFound();
+  bumpViews(id).catch(() => {}); // fire-and-forget view count
 
   const videoUrl = publicUrl(keys.video(id));
   return (

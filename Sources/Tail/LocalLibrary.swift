@@ -7,6 +7,9 @@ struct LocalClip: Codable, Identifiable, Sendable {
     let filename: String
     let createdAt: Date
     var link: String?
+    var game: String?          // capture source (window/app title)
+    var desc: String?          // user description
+    var views: Int?            // fetched from backend when shared
     var id: String { filename }
 }
 
@@ -28,8 +31,9 @@ final class LocalLibrary: ObservableObject {
     func url(for clip: LocalClip) -> URL { dir.appendingPathComponent(clip.filename) }
 
     // Record a newly-saved clip (newest first).
-    func add(_ fileURL: URL) {
-        let clip = LocalClip(filename: fileURL.lastPathComponent, createdAt: Date(), link: nil)
+    func add(_ fileURL: URL, game: String? = nil) {
+        let clip = LocalClip(filename: fileURL.lastPathComponent, createdAt: Date(),
+                             link: nil, game: game, desc: nil, views: nil)
         clips.removeAll { $0.filename == clip.filename }
         clips.insert(clip, at: 0)
         persist()
@@ -38,6 +42,18 @@ final class LocalLibrary: ObservableObject {
     func setLink(_ id: String, _ link: String) {
         guard let i = clips.firstIndex(where: { $0.id == id }) else { return }
         clips[i].link = link
+        persist()
+    }
+
+    func setDescription(_ id: String, _ text: String) {
+        guard let i = clips.firstIndex(where: { $0.id == id }) else { return }
+        clips[i].desc = text
+        persist()
+    }
+
+    func setViews(_ id: String, _ n: Int) {
+        guard let i = clips.firstIndex(where: { $0.id == id }) else { return }
+        clips[i].views = n
         persist()
     }
 

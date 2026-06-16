@@ -35,4 +35,11 @@ final class AppModel: ObservableObject {
         library.setLink(clip.id, link)
         return link
     }
+
+    // Pull the latest view count for a shared clip.
+    func refreshViews(for clip: LocalClip) async {
+        guard let clipsClient, let link = clip.link,
+              let id = link.split(separator: "/").last.map(String.init) else { return }
+        if let v = try? await clipsClient.views(id: id) { library?.setViews(clip.id, v) }
+    }
 }

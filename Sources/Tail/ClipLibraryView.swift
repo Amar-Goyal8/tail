@@ -6,10 +6,11 @@ import AppKit
 // SIGABRT) in this SwiftPM-built app; AVPlayerView is stable.
 struct PlayerView: NSViewRepresentable {
     let player: AVPlayer
+    var controls: AVPlayerViewControlsStyle = .inline
     func makeNSView(context: Context) -> AVPlayerView {
         let v = AVPlayerView()
         v.player = player
-        v.controlsStyle = .inline
+        v.controlsStyle = controls
         v.videoGravity = .resizeAspect
         return v
     }
@@ -21,46 +22,37 @@ struct PlayerView: NSViewRepresentable {
 struct ClipLibraryView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var library: LocalLibrary
-    @State private var selected: LocalClip?
+    @State private var selectedIndex: Int?
 
-    private let columns = [GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 16)]
+    private let columns = [GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 18)]
 
     var body: some View {
-        ZStack {
-            if library.clips.isEmpty {
-                emptyState
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Text("CLIPS").font(Theme.display(30)).foregroundStyle(Theme.text)
-                            Text("\(library.clips.count)").font(Theme.ui(14, .semibold))
-                                .foregroundStyle(Theme.primaryHi)
-                                .padding(.horizontal, 8).padding(.vertical, 2)
-                                .background(Capsule().fill(Theme.primary.opacity(0.18)))
-                            Spacer()
-                        }
-                        LazyVGrid(columns: columns, spacing: 18) {
-                            ForEach(library.clips) { clip in
-                                ClipCard(model: model, library: library, clip: clip)
-                                    .onTapGesture { selected = clip }
-                            }
+        if selectedIndex != nil {
+            ClipViewer(model: model, library: library, index: $selectedIndex,
+                       onExit: { selectedIndex = nil })
+        } else if library.clips.isEmpty {
+            emptyState.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text("CLIPS").font(Theme.display(30)).foregroundStyle(Theme.text)
+                        Text("\(library.clips.count)").font(Theme.ui(14, .semibold))
+                            .foregroundStyle(Theme.primaryHi)
+                            .padding(.horizontal, 8).padding(.vertical, 2)
+                            .background(Capsule().fill(Theme.primary.opacity(0.18)))
+                        Spacer()
+                    }
+                    LazyVGrid(columns: columns, spacing: 18) {
+                        ForEach(Array(library.clips.enumerated()), id: \.element.id) { pair in
+                            ClipCard(model: model, library: library, clip: pair.element)
+                                .onTapGesture { selectedIndex = pair.offset }
                         }
                     }
-                    .padding(28)
                 }
-            }
-
-            // Inline player overlay (in-app, not a separate window).
-            if let clip = selected {
-                Color.black.opacity(0.6).ignoresSafeArea()
-                    .onTapGesture { selected = nil }
-                ClipDetail(model: model, library: library, clip: clip,
-                           onClose: { selected = nil })
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .padding(28)
             }
         }
-        .animation(.easeOut(duration: 0.15), value: selected?.id)
     }
 
     private var emptyState: some View {
@@ -129,83 +121,3 @@ private struct ClipCard: View {
     }
 }
 
-// Inline player + share-link controls.
-private struct ClipDetail: View {
-    @ObservedObject var model: AppModel
-    @ObservedObject var library: LocalLibrary
-    let clip: LocalClip
-    let onClose: () -> Void
-
-    @State private var player: AVPlayer
-    @State private var link: String?
-    @State private var state: LinkState = .idle
-    enum LinkState { case idle, creating, copied }
-
-    init(model: AppModel, library: LocalLibrary, clip: LocalClip, onClose: @escaping () -> Void) {
-        self.model = model; self.library = library; self.clip = clip; self.onClose = onClose
-        _player = State(initialValue: AVPlayer(url: library.url(for: clip)))
-        _link = State(initialValue: clip.link)
-    }
-
-    private func close() { player.pause(); onClose() }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            PlayerView(player: player)
-                .frame(width: 760, height: 428)
-                .background(Color.black)
-                .onAppear { player.play() }
-
-            HStack(spacing: 10) {
-                Text(clip.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    .font(Theme.ui(12)).foregroundStyle(Theme.textDim)
-                Spacer()
-                Button { library.delete(clip); close() } label: {
-                    Image(systemName: "trash")
-                }.buttonStyle(TailButtonStyle(kind: .ghost))
-                shareButton
-                Button { close() } label: { Text("Close") }
-                    .buttonStyle(TailButtonStyle(kind: .ghost))
-            }
-            .padding(14)
-            .background(Theme.surface)
-        }
-        .frame(width: 760)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.R.lg))
-        .overlay(RoundedRectangle(cornerRadius: Theme.R.lg).stroke(Theme.strokeHi))
-        .shadow(color: .black.opacity(0.6), radius: 40)
-        .padding(40)
-    }
-
-    @ViewBuilder private var shareButton: some View {
-        if let link {
-            Button {
-                copyLink(link)
-            } label: {
-                Label(state == .copied ? "Link copied" : "Copy link",
-                      systemImage: state == .copied ? "checkmark" : "link")
-                    .frame(minWidth: 96)
-            }
-            .buttonStyle(TailButtonStyle(kind: state == .copied ? .primary : .action))
-        } else {
-            Button {
-                state = .creating
-                Task {
-                    let made = await model.createLink(for: clip)
-                    link = made
-                    if let made { copyLink(made) } else { state = .idle }
-                }
-            } label: {
-                Label(state == .creating ? "Creating…" : "Create link", systemImage: "link.badge.plus")
-                    .frame(minWidth: 96)
-            }
-            .buttonStyle(TailButtonStyle(kind: .action)).disabled(state == .creating)
-        }
-    }
-
-    private func copyLink(_ s: String) {
-        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(s, forType: .string)
-        state = .copied
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { if state == .copied { state = .idle } }
-    }
-}

@@ -48,6 +48,14 @@ final class ClipsClient: @unchecked Sendable {
         return try JSONDecoder().decode(CheckoutResp.self, from: data).url
     }
 
+    private struct StatsResp: Decodable { let views: Int }
+    func views(id: String) async throws -> Int {
+        let req = URLRequest(url: baseURL.appendingPathComponent("api/clip/\(id)"))
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try Self.check(resp, data)
+        return try JSONDecoder().decode(StatsResp.self, from: data).views
+    }
+
     func delete(_ id: String) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/clips/\(id)"))
         req.httpMethod = "DELETE"

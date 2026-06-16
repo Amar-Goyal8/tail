@@ -52,6 +52,7 @@ export interface ClipMeta {
   durationSec: number;
   createdAt: string; // ISO
   accountId?: string; // owner (for "my clips" + delete auth)
+  views?: number;
 }
 
 export async function putMeta(meta: ClipMeta) {
@@ -106,6 +107,15 @@ export async function setPlan(id: string, plan: Plan): Promise<AccountRecord> {
     })
   );
   return rec;
+}
+
+// Increment + return the view count for a clip.
+export async function bumpViews(id: string): Promise<number> {
+  const meta = await getMeta(id);
+  if (!meta) return 0;
+  meta.views = (meta.views ?? 0) + 1;
+  await putMeta(meta);
+  return meta.views;
 }
 
 // Add a clip to an account's index (cheap pointer = the metadata itself).
