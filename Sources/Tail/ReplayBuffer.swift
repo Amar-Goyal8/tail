@@ -13,6 +13,7 @@ final class ReplayBuffer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "tail.replaybuffer")
     private var video: [CMSampleBuffer] = []
     private var audio: [CMSampleBuffer] = []
+    private var mic: [CMSampleBuffer] = []
     private var videoFormat: CMFormatDescription?
 
     init(seconds: Int, config: Config) {
@@ -28,9 +29,16 @@ final class ReplayBuffer: @unchecked Sendable {
         }
     }
 
-    func appendAudio(_ sample: CMSampleBuffer) {   // PCM audio
+    func appendAudio(_ sample: CMSampleBuffer) {   // PCM system audio
         queue.async {
             self.audio.append(sample)
+            self.evictAll()
+        }
+    }
+
+    func appendMic(_ sample: CMSampleBuffer) {     // PCM mic audio
+        queue.async {
+            self.mic.append(sample)
             self.evictAll()
         }
     }
@@ -43,6 +51,7 @@ final class ReplayBuffer: @unchecked Sendable {
         let cutoff = CMSampleBufferGetPresentationTimeStamp(newestV).seconds - seconds
         ReplayBuffer.trim(&video, before: cutoff)
         ReplayBuffer.trim(&audio, before: cutoff)
+        ReplayBuffer.trim(&mic, before: cutoff)
     }
 
     private static func trim(_ arr: inout [CMSampleBuffer], before cutoff: Double) {
@@ -53,7 +62,7 @@ final class ReplayBuffer: @unchecked Sendable {
     }
 
     func flush(to dir: URL) -> URL? {
-        let (vSnap, aSnap, fmt) = queue.sync { (video, audio, videoFormat) }
+        let (vSnap, aSnap, mSnap, fmt) = queue.sync { (video, audio, mic, videoFormat) }
         guard let fmt, !vSnap.isEmpty else { return nil }
 
         // Start at first video keyframe (clean IDR boundary).
@@ -113,8 +122,56 @@ final class ReplayBuffer: @unchecked Sendable {
             log("writer FAILED status=\(writer.status.rawValue) err=\(writer.error?.localizedDescription ?? "?")")
             return nil
         }
+
+        // Mic mixing: if mic was captured, blend it into the clip's audio.
+        let mClip = mSnap.filter { CMSampleBufferGetPresentationTimeStamp($0) >= base }
+        if !mClip.isEmpty {
+            if let mixed = mixMic(into: url, micClip: mClip, base: base) {
+                try? FileManager.default.removeItem(at: url)
+                log("mixed mic into clip")
+                return mixed
+            }
+            log("mic mix failed — keeping system-audio clip")
+        }
         return url
     }
+
+    // Write the mic clip to a temp file, then mix it with the base clip.
+    private func mixMic(into baseURL: URL, micClip: [CMSampleBuffer], base: CMTime) -> URL? {
+        let micURL = baseURL.deletingPathExtension().appendingPathExtension("mic.m4a")
+        try? FileManager.default.removeItem(at: micURL)
+        guard let writer = try? AVAssetWriter(outputURL: micURL, fileType: .m4a) else { return nil }
+        let aIn = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: config.audioSampleRate,
+            AVNumberOfChannelsKey: config.audioChannels,
+            AVEncoderBitRateKey: config.audioBitrate,
+        ])
+        aIn.expectsMediaDataInRealTime = false
+        guard writer.canAdd(aIn), writer.startWriting() else { return nil }
+        writer.startSession(atSourceTime: .zero)
+        let group = DispatchGroup()
+        feed(aIn, samples: micClip, base: base, queue: DispatchQueue(label: "tail.mic.write"), group: group)
+        group.wait()
+        let sem = DispatchSemaphore(value: 0)
+        writer.finishWriting { sem.signal() }
+        sem.wait()
+        guard writer.status == .completed else { return nil }
+
+        // Mix (async) -> wait synchronously.
+        let cfg = config
+        let box = ResultBox()
+        let s = DispatchSemaphore(value: 0)
+        Task {
+            box.url = await Mixer.mix(base: baseURL, micURL: micURL, config: cfg)
+            s.signal()
+        }
+        s.wait()
+        try? FileManager.default.removeItem(at: micURL)
+        return box.url
+    }
+
+    private final class ResultBox: @unchecked Sendable { var url: URL? }
 
     // Drain `samples` into `input` as it signals readiness; finish + leave once.
     // The callback fires serially on `queue`, so a class-held cursor is safe and

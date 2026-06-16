@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settingsController = SettingsWindowController()
     private let onboardingController = OnboardingWindowController()
     private var clipsClient: ClipsClient!
+    private var micCapture: MicCapture?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenu()
@@ -47,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.buffer.append(sample)
         }
         capture = CaptureEngine(config: config, encoder: encoder, buffer: buffer)
+        if config.micEnabled { micCapture?.stop(); startMic() } // re-point mic at new buffer
     }
 
     // MARK: Menu
@@ -78,6 +80,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         up.state = config.uploadOnClip ? .on : .off
         uploadItem = up
         menu.addItem(up)
+        let micItem = NSMenuItem(title: "Capture microphone", action: #selector(toggleMic), keyEquivalent: "")
+        micItem.state = config.micEnabled ? .on : .off
+        self.micItem = micItem
+        menu.addItem(micItem)
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quit), keyEquivalent: "q"))
         statusItem.menu = menu
@@ -87,6 +93,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleUpload() {
         config.uploadOnClip.toggle()
         uploadItem?.state = config.uploadOnClip ? .on : .off
+    }
+
+    private var micItem: NSMenuItem?
+    @objc private func toggleMic() {
+        config.micEnabled.toggle()
+        micItem?.state = config.micEnabled ? .on : .off
+        if config.micEnabled { startMic() } else { micCapture?.stop(); micCapture = nil }
+    }
+
+    private func startMic() {
+        let buffer = self.buffer!
+        let mic = MicCapture { [weak buffer] sample in buffer?.appendMic(sample) }
+        mic.start()
+        micCapture = mic
     }
 
     @objc private func refreshSources() { refreshSourceMenu() }

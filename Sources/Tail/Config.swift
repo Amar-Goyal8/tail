@@ -20,6 +20,7 @@ struct Config {
     var backendURL: URL = URL(string: ProcessInfo.processInfo.environment["TAIL_BACKEND_URL"]
         ?? "https://web-tau-green-87.vercel.app")!
     var uploadOnClip: Bool = true
+    var micEnabled: Bool = false
 
     var bitrate: Int { bitrateMbps * 1_000_000 }
 
