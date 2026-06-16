@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var uploader: Uploader!
     private var hotKey: HotKey?
     private var currentSource: CaptureSource?
+    private var lastClipURL: URL?
+    private let trimController = TrimWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenu()
@@ -38,6 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Clip last \(config.bufferSeconds)s (⌃⌥C)",
                                 action: #selector(clip), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Trim & share last clip…",
+                                action: #selector(trimLast), keyEquivalent: ""))
         menu.addItem(.separator())
         let srcItem = NSMenuItem(title: "Capture source", action: nil, keyEquivalent: "")
         srcItem.submenu = sourceMenu
@@ -113,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self.log("flush failed (buffer empty or no keyframe yet)")
                 return
             }
+            await MainActor.run { self.lastClipURL = url }
             await self.notify("Clip saved", url.lastPathComponent)
             guard shouldUpload else { return }
             do {
@@ -121,6 +126,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await self.log("upload failed: \(error.localizedDescription)")
                 await self.notify("Upload failed", error.localizedDescription)
+            }
+        }
+    }
+
+    @objc private func trimLast() {
+        guard let url = lastClipURL, FileManager.default.fileExists(atPath: url.path) else {
+            notify("No clip yet", "Make a clip first (⌃⌥C)")
+            return
+        }
+        trimController.show(url: url) { [weak self] start, end in
+            self?.trimAndShare(url, start: start, end: end)
+        }
+    }
+
+    private func trimAndShare(_ url: URL, start: Double, end: Double) {
+        let uploader = self.uploader!
+        Task.detached {
+            do {
+                let trimmed = try await Trimmer.trim(url, start: start, end: end)
+                await self.notify("Trimmed", "Uploading \(trimmed.lastPathComponent)…")
+                let link = try await uploader.upload(trimmed)
+                await self.copyAndNotify(link)
+            } catch {
+                await self.log("trim/share failed: \(error.localizedDescription)")
+                await self.notify("Trim failed", error.localizedDescription)
             }
         }
     }
