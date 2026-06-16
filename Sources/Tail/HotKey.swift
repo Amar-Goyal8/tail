@@ -11,7 +11,7 @@ final class HotKey {
     // keyCode: virtual key (C = 8). modifiers: Carbon mask (controlKey|optionKey).
     init(keyCode: UInt32, modifiers: UInt32, action: @escaping () -> Void) {
         self.action = action
-        var hotKeyID = EventHotKeyID(signature: OSType(0x5441_494C), id: 1) // 'TAIL'
+        let hotKeyID = EventHotKeyID(signature: OSType(0x5441_494C), id: 1) // 'TAIL'
 
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard),
                                  eventKind: UInt32(kEventHotKeyPressed))

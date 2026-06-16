@@ -2,39 +2,62 @@ import Foundation
 import ScreenCaptureKit
 import CoreMedia
 
-// ScreenCaptureKit capture -> CFR clock -> Encoder.
-// SCK is variable-rate (emits only on screen change). We hold the latest frame
-// and a fixed-rate timer re-emits it every 1/fps onto a uniform PTS grid.
-// Result: constant frame rate, uniform stts -> QuickTime paces correctly
-// (it mis-guesses the rate of variable-rate HEVC otherwise).
-// MVP: captures main display. Phase 1.2 will add per-window picker.
+// What to capture: a whole display, or a single window (the game).
+enum CaptureSource: @unchecked Sendable {
+    case display(SCDisplay)
+    case window(SCWindow)
+}
+
+// ScreenCaptureKit capture -> Encoder (video) + ReplayBuffer (audio PCM).
+// Video uses SCK's real PTS so it stays in sync with the audio clock.
 final class CaptureEngine: NSObject, SCStreamOutput, @unchecked Sendable {
     private let config: Config
     private let encoder: Encoder
+    private let buffer: ReplayBuffer
     private var stream: SCStream?
-    private let sampleQueue = DispatchQueue(label: "tail.capture")
+    private let videoQueue = DispatchQueue(label: "tail.capture.video")
+    private let audioQueue = DispatchQueue(label: "tail.capture.audio")
 
-    // Latest frame from SCK, guarded by lock. Clock pulls from here.
-    private let frameLock = NSLock()
-    private var latestFrame: CVPixelBuffer?
-
-    private var clock: DispatchSourceTimer?
-    private var frameIndex: Int64 = 0
-    private let clockQueue = DispatchQueue(label: "tail.cfrclock")
-
-    init(config: Config, encoder: Encoder) {
+    init(config: Config, encoder: Encoder, buffer: ReplayBuffer) {
         self.config = config
         self.encoder = encoder
+        self.buffer = buffer
     }
 
-    func start() async throws {
+    // List capturable sources for the picker menu.
+    static func sources() async throws -> (displays: [SCDisplay], windows: [SCWindow]) {
         let content = try await SCShareableContent.excludingDesktopWindows(false,
                                                                            onScreenWindowsOnly: true)
-        guard let display = content.displays.first else {
-            throw NSError(domain: "tail", code: 1, userInfo: [NSLocalizedDescriptionKey: "no display"])
+        // Only real app windows with a title and sane size.
+        let windows = content.windows.filter {
+            ($0.title?.isEmpty == false) && $0.frame.width > 200 && $0.frame.height > 200
+                && $0.owningApplication?.bundleIdentifier != "com.tail.clipper"
+        }
+        return (content.displays, windows)
+    }
+
+    func start(source: CaptureSource? = nil) async throws {
+        try? await stop()
+        let content = try await SCShareableContent.excludingDesktopWindows(false,
+                                                                           onScreenWindowsOnly: true)
+        let filter: SCContentFilter
+        let label: String
+        switch source {
+        case .window(let w):
+            filter = SCContentFilter(desktopIndependentWindow: w)
+            label = "window: \(w.title ?? "?")"
+        case .display(let d):
+            filter = SCContentFilter(display: d, excludingWindows: [])
+            label = "display \(d.displayID)"
+        case .none:
+            guard let display = content.displays.first else {
+                throw NSError(domain: "tail", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: "no display"])
+            }
+            filter = SCContentFilter(display: display, excludingWindows: [])
+            label = "display \(display.displayID)"
         }
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
         let cfg = SCStreamConfiguration()
         cfg.width = config.width
         cfg.height = config.height
@@ -42,49 +65,51 @@ final class CaptureEngine: NSObject, SCStreamOutput, @unchecked Sendable {
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
         cfg.queueDepth = 8
         cfg.showsCursor = true
+        // System audio.
+        cfg.capturesAudio = true
+        cfg.sampleRate = config.audioSampleRate
+        cfg.channelCount = config.audioChannels
 
         let stream = SCStream(filter: filter, configuration: cfg, delegate: nil)
-        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: sampleQueue)
+        try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
+        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue)
         try await stream.startCapture()
         self.stream = stream
-        startClock()
-        FileHandle.standardError.write("capture started \(config.width)x\(config.height)@\(config.fps) (CFR)\n".data(using: .utf8)!)
+        log("capture started \(config.width)x\(config.height)@\(config.fps) +audio [\(label)]")
     }
 
-    // Fixed-rate clock: emit latest frame on a uniform PTS grid.
-    private func startClock() {
-        let interval = 1.0 / Double(config.fps)
-        let timer = DispatchSource.makeTimerSource(queue: clockQueue)
-        timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .nanoseconds(0))
-        timer.setEventHandler { [weak self] in
-            guard let self else { return }
-            self.frameLock.lock()
-            let frame = self.latestFrame
-            self.frameLock.unlock()
-            guard let frame else { return } // no frame yet
-            let pts = CMTime(value: self.frameIndex, timescale: CMTimeScale(self.config.fps))
-            self.frameIndex += 1
-            self.encoder.encode(frame, pts: pts)
-        }
-        timer.resume()
-        self.clock = timer
+    func stop() async throws {
+        if let s = stream { try? await s.stopCapture() }
+        stream = nil
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer,
                 of type: SCStreamOutputType) {
-        guard type == .screen,
-              CMSampleBufferGetNumSamples(sampleBuffer) > 0,
-              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        switch type {
+        case .screen: handleVideo(sampleBuffer)
+        case .audio: handleAudio(sampleBuffer)
+        default: break
+        }
+    }
 
-        // Skip frames SCK marks as non-complete (e.g. idle/blank).
+    private func handleVideo(_ sampleBuffer: CMSampleBuffer) {
+        guard CMSampleBufferGetNumSamples(sampleBuffer) > 0,
+              let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        // Skip frames SCK marks non-complete (idle/blank).
         if let attach = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
             as? [[SCStreamFrameInfo: Any]], let first = attach.first,
            let raw = first[.status] as? Int, let status = SCFrameStatus(rawValue: raw),
            status != .complete { return }
+        let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+        encoder.encode(pixelBuffer, pts: pts)
+    }
 
-        // Just stash it; the CFR clock decides when to encode.
-        frameLock.lock()
-        latestFrame = pixelBuffer
-        frameLock.unlock()
+    private func handleAudio(_ sampleBuffer: CMSampleBuffer) {
+        guard CMSampleBufferGetNumSamples(sampleBuffer) > 0 else { return }
+        buffer.appendAudio(sampleBuffer)
+    }
+
+    private func log(_ s: String) {
+        FileHandle.standardError.write("[tail] \(s)\n".data(using: .utf8)!)
     }
 }

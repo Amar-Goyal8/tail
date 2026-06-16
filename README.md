@@ -4,8 +4,11 @@ macOS game clipping. High-quality replay buffer + share links. Inspired by Medal
 
 ## Status — Phase 1 spike (local clipping)
 
-Native Swift + ScreenCaptureKit capture → CFR clock → VideoToolbox HW H.264
-encode → in-RAM replay ring buffer → hotkey flush to `.mp4`. No backend yet.
+Native Swift + ScreenCaptureKit capture (display **or** a chosen window) + system
+audio → VideoToolbox HW H.264 + AAC → in-RAM replay ring buffer → hotkey flush to
+a synced `.mp4` (video + audio tracks). No backend yet.
+
+Pick the capture source (display or game window) from the menu-bar 🎬 menu.
 
 Free-tier target: **1440p120** / **1080p240**. 4K reserved for paid (later).
 
@@ -30,8 +33,9 @@ to `~/Movies/Tail/`.
 | File | Role |
 |------|------|
 | `Config.swift` | Resolution / FPS / bitrate / buffer presets |
-| `CaptureEngine.swift` | ScreenCaptureKit capture + CFR clock (uniform frame timing) |
+| `CaptureEngine.swift` | ScreenCaptureKit capture (display or window) + system audio |
 | `Encoder.swift` | VideoToolbox H.264 HW encode, 1s keyframe interval |
+| `ReplayBuffer.swift` | Video+audio rings; flush muxes H.264 + AAC into mp4 |
 | `HotKey.swift` | Carbon global hotkey (no TCC permission needed) |
 | `ReplayBuffer.swift` | Thread-safe ring of encoded frames; flush → mux mp4 |
 | `main.swift` | Menu-bar app, F9 global hotkey |
@@ -45,9 +49,9 @@ to `~/Movies/Tail/`.
 
 ## Known gaps (spike)
 
-- Captures **main display** only — per-window/game picker is next (Phase 1.2).
-- No audio yet (system + mic capture next).
+- Mic capture not wired yet — system audio only (mic = AVCaptureDevice, later).
 - Requires full Xcode for eventual signed distribution; CLI tools fine for dev.
+- `kill -USR1 <pid>` triggers a clip (dev/CI helper, no UI needed).
 - **QuickTime mis-paces 120fps playback** (caps ~40fps → 3× slow). The clips are
   correct — container, browsers, and Discord play true 120fps at real duration.
   QuickTime alone can't preview high-fps; the Phase 3 web player handles preview.

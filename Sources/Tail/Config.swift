@@ -10,6 +10,11 @@ struct Config {
     var saveDir: URL = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first!
         .appendingPathComponent("Tail", isDirectory: true)
 
+    // Audio (system audio capture).
+    var audioSampleRate: Int = 48000
+    var audioChannels: Int = 2
+    var audioBitrate: Int = 160_000
+
     var bitrate: Int { bitrateMbps * 1_000_000 }
 
     // Preset toggle: 1440p120 (quality) vs 1080p240 (smoothness).
