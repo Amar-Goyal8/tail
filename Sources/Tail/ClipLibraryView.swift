@@ -22,37 +22,99 @@ struct PlayerView: NSViewRepresentable {
 struct ClipLibraryView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var library: LocalLibrary
+    @State private var selectedFolder: String?
     @State private var selectedIndex: Int?
+    @State private var newFolder = false
+    @State private var newName = ""
 
     private let columns = [GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 18)]
+    private var visible: [LocalClip] { library.clips(in: selectedFolder) }
 
     var body: some View {
         if selectedIndex != nil {
-            ClipViewer(model: model, library: library, index: $selectedIndex,
+            ClipViewer(model: model, library: library, clips: visible, index: $selectedIndex,
                        onExit: { selectedIndex = nil })
-        } else if library.clips.isEmpty {
-            emptyState.frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
                         Text("CLIPS").font(Theme.display(30)).foregroundStyle(Theme.text)
-                        Text("\(library.clips.count)").font(Theme.ui(14, .semibold))
+                        Text("\(visible.count)").font(Theme.ui(14, .semibold))
                             .foregroundStyle(Theme.primaryHi)
                             .padding(.horizontal, 8).padding(.vertical, 2)
                             .background(Capsule().fill(Theme.primary.opacity(0.18)))
                         Spacer()
                     }
-                    LazyVGrid(columns: columns, spacing: 18) {
-                        ForEach(Array(library.clips.enumerated()), id: \.element.id) { pair in
-                            ClipCard(model: model, library: library, clip: pair.element)
-                                .onTapGesture { selectedIndex = pair.offset }
+                    folderBar
+                    if visible.isEmpty {
+                        emptyState.frame(maxWidth: .infinity, minHeight: 280)
+                    } else {
+                        LazyVGrid(columns: columns, spacing: 18) {
+                            ForEach(Array(visible.enumerated()), id: \.element.id) { pair in
+                                ClipCard(model: model, library: library, clip: pair.element)
+                                    .onTapGesture { selectedIndex = pair.offset }
+                            }
                         }
                     }
                 }
                 .padding(28)
             }
         }
+    }
+
+    private var folderBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                folderChip("All Clips", icon: "square.grid.2x2", value: nil)
+                ForEach(library.folders, id: \.self) { f in
+                    folderChip(f, icon: "folder.fill", value: f)
+                }
+                Button { newFolder = true } label: {
+                    HStack(spacing: 5) { Image(systemName: "plus"); Text("New") }
+                        .font(Theme.ui(12, .medium)).foregroundStyle(Theme.textDim)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Theme.card, in: Capsule()).overlay(Capsule().stroke(Theme.stroke))
+                }.buttonStyle(.plain)
+                .popover(isPresented: $newFolder) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("New folder").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.text)
+                        TextField("Name", text: $newName).textFieldStyle(.roundedBorder).frame(width: 180)
+                            .onSubmit(addFolder)
+                        Button("Create") { addFolder() }.buttonStyle(TailButtonStyle(kind: .primary))
+                    }.padding(14).background(Theme.surface)
+                }
+            }
+        }
+    }
+
+    private func folderChip(_ title: String, icon: String, value: String?) -> some View {
+        let active = selectedFolder == value
+        return Button { selectedFolder = value } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 11))
+                Text(title).font(Theme.ui(12, .semibold))
+                if value != nil {
+                    Menu {
+                        Button("Delete folder", role: .destructive) {
+                            if selectedFolder == value { selectedFolder = nil }
+                            library.deleteFolder(value!)
+                        }
+                    } label: { Image(systemName: "ellipsis").font(.system(size: 10)) }
+                    .menuStyle(.borderlessButton).fixedSize().frame(width: 14)
+                }
+            }
+            .foregroundStyle(active ? .white : Theme.textDim)
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(active ? AnyShapeStyle(Theme.violetGrad) : AnyShapeStyle(Theme.card), in: Capsule())
+            .overlay(Capsule().stroke(active ? .clear : Theme.stroke))
+        }.buttonStyle(.plain)
+    }
+
+    private func addFolder() {
+        let n = newName.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return }
+        library.createFolder(n); selectedFolder = n
+        newName = ""; newFolder = false
     }
 
     private var emptyState: some View {
@@ -62,8 +124,9 @@ struct ClipLibraryView: View {
                 Image(systemName: "square.grid.2x2.fill").font(.system(size: 34))
                     .foregroundStyle(Theme.primaryHi)
             }
-            Text("NO CLIPS YET").font(Theme.display(22)).foregroundStyle(Theme.text)
-            Text("Press ⌃⌥C while gaming to grab the last 30 seconds.")
+            Text(selectedFolder == nil ? "NO CLIPS YET" : "EMPTY FOLDER").font(Theme.display(22)).foregroundStyle(Theme.text)
+            Text(selectedFolder == nil ? "Press ⌃⌥C while gaming to grab the last 30 seconds."
+                                       : "Move clips here from the … menu on a card.")
                 .font(Theme.ui(13)).foregroundStyle(Theme.textDim)
         }
     }
@@ -90,11 +153,32 @@ private struct ClipCard: View {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 42)).foregroundStyle(.white.opacity(hover ? 0.95 : 0.0))
                     .shadow(radius: 8)
-                if clip.link != nil {
-                    VStack { HStack { Spacer()
-                        Image(systemName: "link").font(.caption2).padding(5)
-                            .background(.ultraThinMaterial, in: Circle()).padding(6)
-                    }; Spacer() }
+                // top row: … menu (left) + link badge (right)
+                VStack {
+                    HStack {
+                        Menu {
+                            Section("Move to") {
+                                Button("Unsorted") { library.move(clip.id, to: nil) }
+                                ForEach(library.folders, id: \.self) { f in
+                                    Button(f) { library.move(clip.id, to: f) }
+                                }
+                            }
+                            Divider()
+                            Button("Delete", role: .destructive) { library.delete(clip) }
+                        } label: {
+                            Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(.white).frame(width: 26, height: 26)
+                                .background(.black.opacity(0.45), in: Circle())
+                        }
+                        .menuStyle(.borderlessButton).fixedSize().menuIndicator(.hidden)
+                        .opacity(hover ? 1 : 0)
+                        Spacer()
+                        if clip.link != nil {
+                            Image(systemName: "link").font(.caption2).foregroundStyle(.white).padding(5)
+                                .background(.black.opacity(0.45), in: Circle())
+                        }
+                    }.padding(7)
+                    Spacer()
                 }
             }
             .frame(height: 165).clipped()

@@ -7,6 +7,7 @@ import AppKit
 struct ClipViewer: View {
     @ObservedObject var model: AppModel
     @ObservedObject var library: LocalLibrary
+    let clips: [LocalClip]
     @Binding var index: Int?
     let onExit: () -> Void
 
@@ -16,8 +17,8 @@ struct ClipViewer: View {
     enum LinkState { case idle, creating, copied }
 
     private var clip: LocalClip? {
-        guard let i = index, library.clips.indices.contains(i) else { return nil }
-        return library.clips[i]
+        guard let i = index, clips.indices.contains(i) else { return nil }
+        return clips[i]
     }
 
     var body: some View {
@@ -45,9 +46,24 @@ struct ClipViewer: View {
             Spacer()
             Text(clip.game ?? "Clip").font(Theme.display(18)).foregroundStyle(Theme.text)
             Spacer()
+            moveMenu(clip)
             shareButton(clip)
         }
         .padding(.horizontal, 22).padding(.vertical, 14)
+    }
+
+    private func moveMenu(_ clip: LocalClip) -> some View {
+        Menu {
+            Button("Unsorted") { library.move(clip.id, to: nil) }
+            if !library.folders.isEmpty { Divider() }
+            ForEach(library.folders, id: \.self) { f in
+                Button(f) { library.move(clip.id, to: f) }
+            }
+        } label: {
+            Label(clip.folder ?? "Move to…", systemImage: "folder")
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .foregroundStyle(Theme.textDim).font(Theme.ui(12))
     }
 
     // MARK: Theater (video + custom controls + prev/next)
@@ -59,7 +75,7 @@ struct ClipViewer: View {
 
             // prev / next
             HStack {
-                navArrow("chevron.left", enabled: (index ?? 0) < library.clips.count - 1) { step(1) }
+                navArrow("chevron.left", enabled: (index ?? 0) < clips.count - 1) { step(1) }
                 Spacer()
                 navArrow("chevron.right", enabled: (index ?? 0) > 0) { step(-1) }
             }
@@ -170,7 +186,7 @@ struct ClipViewer: View {
     private func step(_ delta: Int) {
         guard let i = index else { return }
         let n = i + delta
-        if library.clips.indices.contains(n) { index = n }
+        if clips.indices.contains(n) { index = n }
     }
 
     private func copyLink(_ s: String) {

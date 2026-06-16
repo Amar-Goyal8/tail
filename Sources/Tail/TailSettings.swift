@@ -4,6 +4,7 @@ import SwiftUI
 // Tabbed settings window (sidebar) — General / Video / Audio.
 struct TailSettingsView: View {
     @ObservedObject var model: AppModel
+    var onClose: () -> Void = {}
     @State private var tab: STab = .video
     enum STab: String, CaseIterable, Identifiable {
         case video = "Video", audio = "Audio", general = "General"
@@ -31,21 +32,34 @@ struct TailSettingsView: View {
                 }
                 Spacer()
             }
-            .frame(width: 168).background(Theme.surface)
+            .frame(width: 180).background(Theme.surface)
             .overlay(Rectangle().fill(Theme.stroke).frame(width: 1), alignment: .trailing)
 
             // content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    switch tab {
-                    case .video: video
-                    case .audio: audio
-                    case .general: general
-                    }
-                }.padding(24)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.bg)
+            VStack(spacing: 0) {
+                HStack {
+                    Text("SETTINGS").font(Theme.display(22)).foregroundStyle(Theme.text)
+                    Spacer()
+                    Button { onClose() } label: {
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Theme.textDim).frame(width: 32, height: 32)
+                            .background(Theme.elevated, in: Circle()).overlay(Circle().stroke(Theme.stroke))
+                    }.buttonStyle(.plain)
+                }
+                .padding(.horizontal, 24).padding(.vertical, 16)
+                .overlay(Rectangle().fill(Theme.stroke).frame(height: 1), alignment: .bottom)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        switch tab {
+                        case .video: video
+                        case .audio: audio
+                        case .general: general
+                        }
+                    }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.bg)
         }
-        .frame(width: 660, height: 460)
         .preferredColorScheme(.dark)
     }
 
@@ -152,22 +166,5 @@ struct TailSettingsView: View {
                 HStack { Image(systemName: "folder"); Text("Open clips folder") }
             }.buttonStyle(TailButtonStyle(kind: .ghost))
         }
-    }
-}
-
-@MainActor
-final class TailSettingsController {
-    private var window: NSWindow?
-    func show(model: AppModel) {
-        if let window { window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 660, height: 460),
-                           styleMask: [.titled, .closable, .fullSizeContentView],
-                           backing: .buffered, defer: false)
-        win.title = "Tail Settings"; win.titlebarAppearsTransparent = true; win.titleVisibility = .hidden
-        win.backgroundColor = NSColor(red: 0.043, green: 0.043, blue: 0.07, alpha: 1)
-        win.contentViewController = NSHostingController(rootView: TailSettingsView(model: model))
-        win.center(); win.isReleasedWhenClosed = false
-        NSApp.activate(ignoringOtherApps: true); win.makeKeyAndOrderFront(nil)
-        window = win
     }
 }

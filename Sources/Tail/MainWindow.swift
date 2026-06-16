@@ -65,12 +65,16 @@ struct MainWindowView: View {
             Sidebar(model: model, tab: $tab)
             ZStack {
                 Theme.bgGrad.ignoresSafeArea()
-                VStack(spacing: 0) {
-                    TopBar(model: model)
-                    Group {
-                        switch tab {
-                        case .clips: ClipsPane(model: model)
-                        case .account: AccountPane(model: model)
+                if model.showSettings {
+                    TailSettingsView(model: model, onClose: { model.showSettings = false })
+                } else {
+                    VStack(spacing: 0) {
+                        TopBar(model: model)
+                        Group {
+                            switch tab {
+                            case .clips: ClipsPane(model: model)
+                            case .account: AccountPane(model: model)
+                            }
                         }
                     }
                 }

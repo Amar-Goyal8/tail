@@ -10,6 +10,7 @@ struct LocalClip: Codable, Identifiable, Sendable {
     var game: String?          // capture source (window/app title)
     var desc: String?          // user description
     var views: Int?            // fetched from backend when shared
+    var folder: String?        // organizing folder (nil = unsorted)
     var id: String { filename }
 }
 
@@ -18,14 +19,38 @@ struct LocalClip: Codable, Identifiable, Sendable {
 @MainActor
 final class LocalLibrary: ObservableObject {
     @Published private(set) var clips: [LocalClip] = []
+    @Published private(set) var folders: [String] = []
     private let dir: URL
     private var indexURL: URL { dir.appendingPathComponent(".tail-clips.json") }
+    private var foldersURL: URL { dir.appendingPathComponent(".tail-folders.json") }
     private var thumbs: [String: NSImage] = [:]
 
     init(dir: URL) {
         self.dir = dir
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         load()
+    }
+
+    // MARK: Folders
+    func clips(in folder: String?) -> [LocalClip] {
+        folder == nil ? clips : clips.filter { $0.folder == folder }
+    }
+
+    func createFolder(_ name: String) {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty, !folders.contains(n) else { return }
+        folders.append(n); folders.sort(); persistFolders()
+    }
+
+    func deleteFolder(_ name: String) {
+        folders.removeAll { $0 == name }
+        for i in clips.indices where clips[i].folder == name { clips[i].folder = nil }
+        persistFolders(); persist()
+    }
+
+    func move(_ id: String, to folder: String?) {
+        guard let i = clips.firstIndex(where: { $0.id == id }) else { return }
+        clips[i].folder = folder; persist()
     }
 
     func url(for clip: LocalClip) -> URL { dir.appendingPathComponent(clip.filename) }
@@ -79,13 +104,20 @@ final class LocalLibrary: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: indexURL),
-              let list = try? JSONDecoder().decode([LocalClip].self, from: data) else { return }
-        // Keep only clips whose files still exist.
-        clips = list.filter { FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.filename).path) }
+        if let data = try? Data(contentsOf: indexURL),
+           let list = try? JSONDecoder().decode([LocalClip].self, from: data) {
+            clips = list.filter { FileManager.default.fileExists(atPath: dir.appendingPathComponent($0.filename).path) }
+        }
+        if let data = try? Data(contentsOf: foldersURL),
+           let f = try? JSONDecoder().decode([String].self, from: data) {
+            folders = f
+        }
     }
 
     private func persist() {
         if let data = try? JSONEncoder().encode(clips) { try? data.write(to: indexURL) }
+    }
+    private func persistFolders() {
+        if let data = try? JSONEncoder().encode(folders) { try? data.write(to: foldersURL) }
     }
 }

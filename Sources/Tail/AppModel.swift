@@ -12,6 +12,7 @@ final class AppModel: ObservableObject {
     @Published var lastLink: String?
     @Published var statusText = "Ready"
     @Published var clipsRefreshToken = 0
+    @Published var showSettings = false
 
     // Foreground game (detected) + capture settings shown in the top bar.
     @Published var gameName = "Waiting for game…"

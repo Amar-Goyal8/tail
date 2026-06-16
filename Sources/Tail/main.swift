@@ -15,7 +15,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentSource: CaptureSource?
     private var lastClipURL: URL?
     private let trimController = TrimWindowController()
-    private let settingsController = TailSettingsController()
     private let onboardingController = OnboardingWindowController()
     private var clipsClient: ClipsClient!
     private var micCapture: MicCapture?
@@ -365,7 +364,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
-        settingsController.show(model: model)
+        mainWindow.show(model: model)
+        model.showSettings = true
     }
 
     @objc private func trimLast() {
