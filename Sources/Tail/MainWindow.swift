@@ -1,15 +1,63 @@
 import AppKit
 import SwiftUI
 import AVKit
+import Carbon.HIToolbox
+
+// Captures a keystroke and reports it as a Carbon hotkey (keyCode + modifiers).
+struct HotkeyRecorder: View {
+    @ObservedObject var model: AppModel
+    @State private var recording = false
+    @State private var monitor: Any?
+
+    var body: some View {
+        Button {
+            if recording { stop() } else { start() }
+        } label: {
+            HStack {
+                Image(systemName: recording ? "circle.fill" : "keyboard")
+                    .foregroundStyle(recording ? Theme.live : Theme.textDim).font(.system(size: 11))
+                Text(recording ? "Press keys…" : model.hotkeyLabel).font(Theme.ui(13, .semibold))
+                Spacer()
+            }
+            .foregroundStyle(Theme.text)
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.sm))
+            .overlay(RoundedRectangle(cornerRadius: Theme.R.sm).stroke(recording ? Theme.live.opacity(0.6) : Theme.stroke))
+        }.buttonStyle(.plain)
+    }
+
+    private func start() {
+        recording = true
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            handle(e); return nil
+        }
+    }
+    private func stop() {
+        recording = false
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+    }
+    private func handle(_ e: NSEvent) {
+        let mods = e.modifierFlags
+        var carbon: UInt32 = 0; var label = ""
+        if mods.contains(.control) { carbon |= UInt32(controlKey); label += "⌃" }
+        if mods.contains(.option)  { carbon |= UInt32(optionKey);  label += "⌥" }
+        if mods.contains(.shift)   { carbon |= UInt32(shiftKey);   label += "⇧" }
+        if mods.contains(.command) { carbon |= UInt32(cmdKey);     label += "⌘" }
+        let key = (e.charactersIgnoringModifiers ?? "").uppercased()
+        label += key.isEmpty ? "?" : key
+        model.onSetHotkey(UInt32(e.keyCode), carbon, label)
+        stop()
+    }
+}
 
 // Custom gaming-styled main window: hand-built sidebar + content, no stock chrome.
 struct MainWindowView: View {
     @ObservedObject var model: AppModel
     @State private var tab: Tab = .clips
     enum Tab: String, CaseIterable, Identifiable {
-        case record = "Record", clips = "Clips", account = "Account"
+        case clips = "Clips", account = "Account"
         var id: String { rawValue }
-        var icon: String { self == .record ? "dot.radiowaves.left.and.right" : self == .clips ? "square.grid.2x2.fill" : "person.fill" }
+        var icon: String { self == .clips ? "square.grid.2x2.fill" : "person.fill" }
     }
 
     var body: some View {
@@ -17,18 +65,96 @@ struct MainWindowView: View {
             Sidebar(model: model, tab: $tab)
             ZStack {
                 Theme.bgGrad.ignoresSafeArea()
-                Group {
-                    switch tab {
-                    case .record: RecordPane(model: model)
-                    case .clips: ClipsPane(model: model)
-                    case .account: AccountPane(model: model)
+                VStack(spacing: 0) {
+                    TopBar(model: model)
+                    Group {
+                        switch tab {
+                        case .clips: ClipsPane(model: model)
+                        case .account: AccountPane(model: model)
+                        }
                     }
                 }
             }
         }
-        .frame(minWidth: 880, minHeight: 580)
+        .frame(minWidth: 900, minHeight: 600)
         .background(Theme.bg)
         .preferredColorScheme(.dark)
+    }
+}
+
+// Top status/control bar: detected game · clip button · buffer+hotkey pill · gear.
+private struct TopBar: View {
+    @ObservedObject var model: AppModel
+    @State private var showQuick = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Detected game
+            HStack(spacing: 9) {
+                Group {
+                    if let icon = model.gameIcon {
+                        Image(nsImage: icon).resizable().frame(width: 22, height: 22)
+                    } else {
+                        Image(systemName: "gamecontroller.fill").foregroundStyle(Theme.primaryHi)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("PLAYING").font(Theme.ui(9, .semibold)).tracking(1.5).foregroundStyle(Theme.textFaint)
+                    Text(model.gameName).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                }
+            }
+            Spacer()
+            Button(action: model.onClip) {
+                HStack(spacing: 6) { Image(systemName: "scissors"); Text("Clip") }
+            }.buttonStyle(TailButtonStyle(kind: .action))
+
+            // Buffer + hotkey pill -> quick edit popover
+            Button { showQuick.toggle() } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 11))
+                    Text("\(model.bufferSeconds)s").font(Theme.ui(12, .semibold))
+                    Text(model.hotkeyLabel).font(Theme.ui(11)).foregroundStyle(Theme.textDim)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(Color.white.opacity(0.07)))
+                }
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Theme.elevated, in: Capsule())
+                .overlay(Capsule().stroke(Theme.stroke))
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showQuick, arrowEdge: .bottom) {
+                QuickSettings(model: model).padding(16).frame(width: 240)
+                    .background(Theme.surface)
+            }
+
+            Button(action: model.onOpenSettings) {
+                Image(systemName: "gearshape.fill").font(.system(size: 15))
+                    .foregroundStyle(Theme.textDim).frame(width: 34, height: 34)
+                    .background(Theme.elevated, in: Circle()).overlay(Circle().stroke(Theme.stroke))
+            }.buttonStyle(.plain)
+        }
+        .padding(.horizontal, 22).padding(.vertical, 14)
+        .background(Theme.surface.opacity(0.6))
+        .overlay(Rectangle().fill(Theme.stroke).frame(height: 1), alignment: .bottom)
+    }
+}
+
+private struct QuickSettings: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("CLIP LENGTH").font(Theme.ui(10, .semibold)).tracking(1.5).foregroundStyle(Theme.textDim)
+            HStack {
+                ForEach([15, 30, 60, 90], id: \.self) { s in
+                    Button("\(s)s") { model.onSetBuffer(s) }
+                        .buttonStyle(TailButtonStyle(kind: model.bufferSeconds == s ? .primary : .ghost))
+                }
+            }
+            Divider().overlay(Theme.stroke)
+            Text("HOTKEY").font(Theme.ui(10, .semibold)).tracking(1.5).foregroundStyle(Theme.textDim)
+            HotkeyRecorder(model: model)
+        }
     }
 }
 
@@ -112,56 +238,7 @@ private struct PaneTitle: View {
     }
 }
 
-private struct RecordPane: View {
-    @ObservedObject var model: AppModel
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                PaneTitle(text: "RECORD", sub: "Press ⌃⌥C anywhere to grab the last 30 seconds")
-
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 8) {
-                        Circle().fill(Theme.success).frame(width: 8, height: 8)
-                            .shadow(color: Theme.success, radius: 5)
-                        Text(model.statusText.uppercased()).font(Theme.ui(11, .semibold)).tracking(1)
-                            .foregroundStyle(Theme.textDim)
-                        Spacer()
-                        Label(model.sourceLabel, systemImage: "display")
-                            .font(Theme.ui(12)).foregroundStyle(Theme.textDim)
-                    }
-                    Button(action: model.onClip) {
-                        HStack { Image(systemName: "scissors"); Text("CLIP LAST 30s").tracking(1); Spacer()
-                            Text("⌃⌥C").font(Theme.ui(12)).opacity(0.8) }
-                    }.buttonStyle(TailButtonStyle(kind: .action, full: true))
-                    Button(action: model.onTrimLast) {
-                        HStack { Image(systemName: "timeline.selection"); Text("Trim & share last clip"); Spacer() }
-                    }.buttonStyle(TailButtonStyle(kind: .ghost, full: true))
-                }.panel(18)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("QUALITY").font(Theme.ui(12, .semibold)).tracking(1.5).foregroundStyle(Theme.textDim)
-                    ForEach(Config.presets, id: \.name) { p in
-                        PresetRow(name: p.name, selected: model.presetName == p.name,
-                                  locked: p.pro && model.plan != "pro") { model.onPickPreset(p.name) }
-                    }
-                }.panel(18)
-
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("AUDIO").font(Theme.ui(12, .semibold)).tracking(1.5).foregroundStyle(Theme.textDim)
-                    TailToggle(label: "Capture microphone", on: model.micEnabled) { model.micEnabled = $0; model.onToggleMic($0) }
-                    Button(action: model.onOpenClipsFolder) {
-                        HStack { Image(systemName: "folder"); Text("Open clips folder"); Spacer() }
-                    }.buttonStyle(TailButtonStyle(kind: .ghost, full: true))
-                }.panel(18)
-            }
-            .padding(28)
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-private struct PresetRow: View {
+struct PresetRow: View {
     let name: String, selected: Bool, locked: Bool
     let action: () -> Void
     @State private var hover = false
@@ -185,7 +262,7 @@ private struct PresetRow: View {
     }
 }
 
-private struct TailToggle: View {
+struct TailToggle: View {
     let label: String; let on: Bool; let set: (Bool) -> Void
     var body: some View {
         Button { set(!on) } label: {

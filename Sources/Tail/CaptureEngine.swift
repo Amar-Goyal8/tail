@@ -65,14 +65,16 @@ final class CaptureEngine: NSObject, SCStreamOutput, SCStreamDelegate, @unchecke
         cfg.pixelFormat = kCVPixelFormatType_32BGRA
         cfg.queueDepth = 8
         cfg.showsCursor = true
-        // System audio.
-        cfg.capturesAudio = true
+        // System audio (optional).
+        cfg.capturesAudio = config.systemAudioEnabled
         cfg.sampleRate = config.audioSampleRate
         cfg.channelCount = config.audioChannels
 
         let stream = SCStream(filter: filter, configuration: cfg, delegate: self)
         try stream.addStreamOutput(self, type: .screen, sampleHandlerQueue: videoQueue)
-        try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue)
+        if config.systemAudioEnabled {
+            try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: audioQueue)
+        }
         try await stream.startCapture()
         self.stream = stream
         log("capture started \(config.width)x\(config.height)@\(config.fps) +audio [\(label)]")

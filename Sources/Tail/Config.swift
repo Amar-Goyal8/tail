@@ -21,6 +21,7 @@ struct Config {
         ?? "https://web-tau-green-87.vercel.app")!
     var uploadOnClip: Bool = true
     var micEnabled: Bool = false
+    var systemAudioEnabled: Bool = true
 
     var bitrate: Int { bitrateMbps * 1_000_000 }
 

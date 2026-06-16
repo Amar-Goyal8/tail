@@ -15,8 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentSource: CaptureSource?
     private var lastClipURL: URL?
     private let trimController = TrimWindowController()
-    private let libraryController = LibraryWindowController()
-    private let settingsController = SettingsWindowController()
+    private let settingsController = TailSettingsController()
     private let onboardingController = OnboardingWindowController()
     private var clipsClient: ClipsClient!
     private var micCapture: MicCapture?
@@ -36,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshPlan()
         buildQualityMenu()
         setupModel()
+        setupGameDetection()
         if OnboardingWindowController.hasOnboarded {
             mainWindow.show(model: model)
         } else {
@@ -43,10 +43,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // Track the foreground app as the "game" (last non-Tail app shown in top bar).
+    private func setupGameDetection() {
+        let nc = NSWorkspace.shared.notificationCenter
+        nc.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.updateGame(app)
+        }
+        if let front = NSWorkspace.shared.frontmostApplication { updateGame(front) }
+    }
+
+    private func updateGame(_ app: NSRunningApplication) {
+        let id = app.bundleIdentifier ?? ""
+        let skip = ["com.tail.clipper", "com.apple.finder", "com.apple.dock", "com.apple.controlcenter"]
+        guard !skip.contains(id), let name = app.localizedName else { return }
+        model.gameName = name
+        model.gameIcon = app.icon
+    }
+
     private func setupModel() {
         model.clipsClient = clipsClient
         model.library = LocalLibrary(dir: config.saveDir)
         model.uploader = uploader
+        model.bufferSeconds = config.bufferSeconds
+        model.systemAudio = config.systemAudioEnabled
+        model.micAudio = config.micEnabled
+        model.hotkeyLabel = UserDefaults.standard.string(forKey: "tail.hkLabel") ?? "⌃⌥C"
+        model.onSetBuffer = { [weak self] secs in
+            guard let self else { return }
+            self.config.bufferSeconds = secs; self.model.bufferSeconds = secs
+            Task { @MainActor in
+                try? await self.capture.stop(); self.buildPipeline(); self.startCapture(source: self.currentSource)
+            }
+        }
+        model.onSetSystemAudio = { [weak self] on in
+            guard let self else { return }
+            self.config.systemAudioEnabled = on; self.model.systemAudio = on
+            Task { @MainActor in
+                try? await self.capture.stop(); self.buildPipeline(); self.startCapture(source: self.currentSource)
+            }
+        }
+        model.onSetHotkey = { [weak self] code, mods, label in self?.setHotkey(code, mods, label) }
+        model.onOpenSettings = { [weak self] in self?.showSettings() }
+        model.onToggleMic = { [weak self] on in
+            guard let self else { return }
+            self.config.micEnabled = on; self.model.micAudio = on; self.micItem?.state = on ? .on : .off
+            if on { self.startMic() } else { self.micCapture?.stop(); self.micCapture = nil }
+        }
         model.uploadOnClip = config.uploadOnClip
         model.micEnabled = config.micEnabled
         model.presetName = currentPresetName
@@ -285,29 +328,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
-        let model = SettingsModel(uploadOnClip: config.uploadOnClip,
-                                  bufferSeconds: config.bufferSeconds,
-                                  accountId: Account.token,
-                                  backendURL: config.backendURL.absoluteString,
-                                  plan: plan)
-        model.onUploadChange = { [weak self] on in
-            self?.config.uploadOnClip = on
-            self?.uploadItem?.state = on ? .on : .off
-        }
-        model.onBufferChange = { [weak self] secs in
-            guard let self else { return }
-            self.config.bufferSeconds = secs
-            Task { @MainActor in
-                try? await self.capture.stop()
-                self.buildPipeline()
-                self.startCapture(source: self.currentSource)
-            }
-        }
-        model.onOpenSaveFolder = { [weak self] in
-            guard let self else { return }
-            try? FileManager.default.createDirectory(at: self.config.saveDir, withIntermediateDirectories: true)
-            NSWorkspace.shared.open(self.config.saveDir)
-        }
         settingsController.show(model: model)
     }
 
@@ -358,17 +378,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Hotkey + debug trigger
 
-    // Global ⌃⌥C via Carbon hotkey. No TCC permission needed.
+    private var hotkeyCode = UInt32(UserDefaults.standard.object(forKey: "tail.hkCode") as? Int ?? 8)
+    private var hotkeyMods = UInt32(UserDefaults.standard.object(forKey: "tail.hkMods") as? Int ?? (controlKey | optionKey))
+
+    // Global Carbon hotkey (configurable). No TCC permission needed.
     private func installHotkey() {
-        let control = UInt32(controlKey)
-        let option = UInt32(optionKey)
-        hotKey = HotKey(keyCode: 8, modifiers: control | option) { [weak self] in
-            Task { @MainActor in
-                self?.log("hotkey fired")
-                self?.clip()
-            }
+        hotKey = HotKey(keyCode: hotkeyCode, modifiers: hotkeyMods) { [weak self] in
+            Task { @MainActor in self?.clip() }
         }
-        log("hotkey registered ⌃⌥C")
+        log("hotkey registered")
+    }
+
+    private func setHotkey(_ code: UInt32, _ mods: UInt32, _ label: String) {
+        hotkeyCode = code; hotkeyMods = mods
+        UserDefaults.standard.set(Int(code), forKey: "tail.hkCode")
+        UserDefaults.standard.set(Int(mods), forKey: "tail.hkMods")
+        UserDefaults.standard.set(label, forKey: "tail.hkLabel")
+        model.hotkeyLabel = label
+        installHotkey() // old HotKey deinits + unregisters
     }
 
     // SIGUSR1 -> clip. Lets dev/CI trigger a flush without UI: `kill -USR1 <pid>`.

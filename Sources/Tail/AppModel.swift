@@ -13,6 +13,20 @@ final class AppModel: ObservableObject {
     @Published var statusText = "Ready"
     @Published var clipsRefreshToken = 0
 
+    // Foreground game (detected) + capture settings shown in the top bar.
+    @Published var gameName = "Desktop"
+    @Published var gameIcon: NSImage?
+    @Published var bufferSeconds = 30
+    @Published var hotkeyLabel = "⌃⌥C"
+    @Published var systemAudio = true
+    @Published var micAudio = false
+
+    // Wired by AppDelegate.
+    var onSetBuffer: (Int) -> Void = { _ in }
+    var onSetSystemAudio: (Bool) -> Void = { _ in }
+    var onOpenSettings: () -> Void = {}
+    var onSetHotkey: (UInt32, UInt32, String) -> Void = { _, _, _ in } // keyCode, carbonMods, label
+
     // Wired by AppDelegate.
     var onClip: () -> Void = {}
     var onTrimLast: () -> Void = {}
