@@ -20,12 +20,24 @@ final class AppModel: ObservableObject {
     @Published var hotkeyLabel = "⌃⌥C"
     @Published var systemAudio = true
     @Published var micAudio = false
+    @Published var inputDevices: [AudioDev] = []
+    @Published var outputDevices: [AudioDev] = []
+    @Published var selectedInput: String?   // mic uniqueID (nil = default)
+    @Published var selectedOutput: String?  // output UID (system default)
 
     // Wired by AppDelegate.
     var onSetBuffer: (Int) -> Void = { _ in }
     var onSetSystemAudio: (Bool) -> Void = { _ in }
     var onOpenSettings: () -> Void = {}
     var onSetHotkey: (UInt32, UInt32, String) -> Void = { _, _, _ in } // keyCode, carbonMods, label
+    var onSetInput: (String?) -> Void = { _ in }
+    var onSetOutput: (String) -> Void = { _ in }
+
+    func refreshDevices() {
+        inputDevices = AudioDevices.inputs()
+        outputDevices = AudioDevices.outputs()
+        if selectedOutput == nil { selectedOutput = AudioDevices.defaultOutputUID() }
+    }
 
     // Wired by AppDelegate.
     var onClip: () -> Void = {}

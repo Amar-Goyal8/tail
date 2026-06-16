@@ -85,6 +85,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onSetHotkey = { [weak self] code, mods, label in self?.setHotkey(code, mods, label) }
         model.onOpenSettings = { [weak self] in self?.showSettings() }
+        model.selectedInput = config.micDeviceUID
+        model.onSetInput = { [weak self] uid in
+            guard let self else { return }
+            self.config.micDeviceUID = uid; self.model.selectedInput = uid
+            if self.config.micEnabled { self.micCapture?.stop(); self.startMic() } // restart with new device
+        }
+        model.onSetOutput = { [weak self] uid in
+            AudioDevices.setDefaultOutput(uid: uid); self?.model.selectedOutput = uid
+        }
+        model.refreshDevices()
         model.onToggleMic = { [weak self] on in
             guard let self else { return }
             self.config.micEnabled = on; self.model.micAudio = on; self.micItem?.state = on ? .on : .off
@@ -103,11 +113,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         model.onToggleUpload = { [weak self] on in
             self?.config.uploadOnClip = on; self?.uploadItem?.state = on ? .on : .off
-        }
-        model.onToggleMic = { [weak self] on in
-            guard let self else { return }
-            self.config.micEnabled = on; self.micItem?.state = on ? .on : .off
-            if on { self.startMic() } else { self.micCapture?.stop(); self.micCapture = nil }
         }
         model.onUpgrade = { [weak self] in self?.upgrade() }
         model.onOpenClipsFolder = { [weak self] in
@@ -184,7 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startMic() {
         let buffer = self.buffer!
-        let mic = MicCapture { [weak buffer] sample in buffer?.appendMic(sample) }
+        let mic = MicCapture(deviceUID: config.micDeviceUID) { [weak buffer] sample in buffer?.appendMic(sample) }
         mic.start()
         micCapture = mic
     }

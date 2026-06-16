@@ -92,6 +92,45 @@ struct TailSettingsView: View {
             Divider().overlay(Theme.stroke).padding(.vertical, 4)
             TailToggle(label: "Desktop / game audio", on: model.systemAudio) { model.onSetSystemAudio($0) }
             TailToggle(label: "Microphone", on: model.micAudio) { model.onToggleMic($0) }
+
+            Divider().overlay(Theme.stroke).padding(.vertical, 4)
+            Text("DEVICES").font(Theme.ui(10, .semibold)).tracking(1.5).foregroundStyle(Theme.textDim)
+            deviceMenu(title: "Input (microphone)",
+                       current: model.inputDevices.first { $0.id == model.selectedInput }?.name ?? "System default",
+                       options: [("System default", nil)] + model.inputDevices.map { ($0.name, $0.id) }) {
+                model.onSetInput($0)
+            }
+            deviceMenu(title: "Output (desktop audio)",
+                       current: model.outputDevices.first { $0.id == model.selectedOutput }?.name ?? "System default",
+                       options: model.outputDevices.map { ($0.name, $0.id) }) {
+                if let uid = $0 { model.onSetOutput(uid) }
+            }
+            Text("Tail records the system's default output. Picking one sets it as default.")
+                .font(Theme.ui(11)).foregroundStyle(Theme.textFaint)
+        }
+        .onAppear { model.refreshDevices() }
+    }
+
+    private func deviceMenu(title: String, current: String,
+                            options: [(String, String?)], pick: @escaping (String?) -> Void) -> some View {
+        HStack {
+            Text(title).font(Theme.ui(13)).foregroundStyle(Theme.text)
+            Spacer()
+            Menu {
+                ForEach(Array(options.enumerated()), id: \.offset) { _, opt in
+                    Button(opt.0) { pick(opt.1) }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(current).font(Theme.ui(12, .medium)).lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
+                }
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.sm))
+                .overlay(RoundedRectangle(cornerRadius: Theme.R.sm).stroke(Theme.stroke))
+            }
+            .menuStyle(.borderlessButton).fixedSize()
         }
     }
 

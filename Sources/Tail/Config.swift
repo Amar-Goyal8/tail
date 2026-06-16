@@ -22,6 +22,7 @@ struct Config {
     var uploadOnClip: Bool = true
     var micEnabled: Bool = false
     var systemAudioEnabled: Bool = true
+    var micDeviceUID: String? = nil   // selected input device (nil = system default)
 
     var bitrate: Int { bitrateMbps * 1_000_000 }
 

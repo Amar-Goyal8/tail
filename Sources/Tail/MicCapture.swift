@@ -8,15 +8,18 @@ final class MicCapture: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, 
     private let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "tail.mic")
     private let onSample: (CMSampleBuffer) -> Void
+    private let deviceUID: String?
     private(set) var running = false
 
-    init(onSample: @escaping (CMSampleBuffer) -> Void) {
+    init(deviceUID: String? = nil, onSample: @escaping (CMSampleBuffer) -> Void) {
+        self.deviceUID = deviceUID
         self.onSample = onSample
     }
 
     func start() {
         guard !running else { return }
-        guard let device = AVCaptureDevice.default(for: .audio),
+        let chosen = deviceUID.flatMap { AVCaptureDevice(uniqueID: $0) }
+        guard let device = chosen ?? AVCaptureDevice.default(for: .audio),
               let input = try? AVCaptureDeviceInput(device: device),
               session.canAddInput(input) else {
             FileHandle.standardError.write("[tail] mic: no input device/permission\n".data(using: .utf8)!)
