@@ -5,7 +5,7 @@ import AVKit
 // The main Tail app window: a sidebar with Record / Clips / Account.
 struct MainWindowView: View {
     @ObservedObject var model: AppModel
-    @State private var tab: Tab = .record
+    @State private var tab: Tab = .clips
     enum Tab: String, CaseIterable, Identifiable { case record = "Record", clips = "Clips", account = "Account"; var id: String { rawValue } }
 
     var body: some View {
