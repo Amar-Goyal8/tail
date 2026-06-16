@@ -75,6 +75,39 @@ export async function getMeta(id: string): Promise<ClipMeta | null> {
   }
 }
 
+// ---- Accounts / plans ----
+
+export type Plan = "free" | "pro";
+export interface AccountRecord {
+  accountId: string;
+  plan: Plan;
+  updatedAt: string;
+}
+
+const accountKey = (id: string) => `accounts/${id}.json`;
+
+export async function getAccount(id: string): Promise<AccountRecord> {
+  try {
+    const r = await s3.send(new GetObjectCommand({ Bucket: bucket, Key: accountKey(id) }));
+    return JSON.parse(await r.Body!.transformToString()) as AccountRecord;
+  } catch {
+    return { accountId: id, plan: "free", updatedAt: new Date().toISOString() };
+  }
+}
+
+export async function setPlan(id: string, plan: Plan): Promise<AccountRecord> {
+  const rec: AccountRecord = { accountId: id, plan, updatedAt: new Date().toISOString() };
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: accountKey(id),
+      ContentType: "application/json",
+      Body: JSON.stringify(rec),
+    })
+  );
+  return rec;
+}
+
 // Add a clip to an account's index (cheap pointer = the metadata itself).
 export async function addUserClip(accountId: string, meta: ClipMeta) {
   await s3.send(

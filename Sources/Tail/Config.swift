@@ -23,7 +23,15 @@ struct Config {
 
     var bitrate: Int { bitrateMbps * 1_000_000 }
 
-    // Preset toggle: 1440p120 (quality) vs 1080p240 (smoothness).
+    // Quality presets. 4K is Pro-only (gated by account plan).
     static let p1440_120 = Config(width: 2560, height: 1440, fps: 120, bitrateMbps: 50)
     static let p1080_240 = Config(width: 1920, height: 1080, fps: 240, bitrateMbps: 40)
+    static let p2160_60  = Config(width: 3840, height: 2160, fps: 60,  bitrateMbps: 90)
+
+    struct Preset { let name: String; let config: Config; let pro: Bool }
+    static let presets: [Preset] = [
+        Preset(name: "1440p · 120fps", config: .p1440_120, pro: false),
+        Preset(name: "1080p · 240fps", config: .p1080_240, pro: false),
+        Preset(name: "4K · 60fps (Pro)", config: .p2160_60, pro: true),
+    ]
 }

@@ -20,17 +20,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenu()
+        uploader = Uploader(baseURL: config.backendURL)
+        clipsClient = ClipsClient(baseURL: config.backendURL)
+        buildPipeline()
+        startCapture(source: nil)
+        installHotkey()
+        installDebugTrigger()
+        refreshSourceMenu()
+        refreshPlan()
+        buildQualityMenu()
+    }
+
+    // (Re)build encoder + buffer + capture for the current config (resolution/fps).
+    private func buildPipeline() {
         buffer = ReplayBuffer(seconds: config.bufferSeconds, config: config)
         encoder = Encoder(config: config) { [weak self] sample in
             self?.buffer.append(sample)
         }
         capture = CaptureEngine(config: config, encoder: encoder, buffer: buffer)
-        uploader = Uploader(baseURL: config.backendURL)
-        clipsClient = ClipsClient(baseURL: config.backendURL)
-        startCapture(source: nil)
-        installHotkey()
-        installDebugTrigger()
-        refreshSourceMenu()
     }
 
     // MARK: Menu
@@ -50,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let srcItem = NSMenuItem(title: "Capture source", action: nil, keyEquivalent: "")
         srcItem.submenu = sourceMenu
         menu.addItem(srcItem)
+        let qItem = NSMenuItem(title: "Quality", action: nil, keyEquivalent: "")
+        qItem.submenu = qualityMenu
+        menu.addItem(qItem)
+        upgradeItem = NSMenuItem(title: "Upgrade to Pro (4K)…", action: #selector(upgrade), keyEquivalent: "")
+        menu.addItem(upgradeItem!)
         menu.addItem(NSMenuItem(title: "Refresh sources", action: #selector(refreshSources), keyEquivalent: ""))
         menu.addItem(.separator())
         let up = NSMenuItem(title: "Upload + copy link on clip", action: #selector(toggleUpload), keyEquivalent: "")
@@ -130,6 +142,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 await self.log("upload failed: \(error.localizedDescription)")
                 await self.notify("Upload failed", error.localizedDescription)
+            }
+        }
+    }
+
+    // MARK: Quality presets + plan
+
+    private let qualityMenu = NSMenu()
+    private var upgradeItem: NSMenuItem?
+    private var plan = "free"
+    private var currentPresetName = Config.presets.first!.name
+
+    private func refreshPlan() {
+        Task { @MainActor in
+            if let p = try? await clipsClient.plan() {
+                plan = p
+                upgradeItem?.isHidden = (p == "pro")
+                buildQualityMenu()
+            }
+        }
+    }
+
+    private func buildQualityMenu() {
+        qualityMenu.removeAllItems()
+        for preset in Config.presets {
+            let locked = preset.pro && plan != "pro"
+            let title = preset.name + (locked ? " 🔒" : "")
+            let it = NSMenuItem(title: title, action: #selector(pickPreset(_:)), keyEquivalent: "")
+            it.representedObject = preset.name
+            it.state = (preset.name == currentPresetName) ? .on : .off
+            qualityMenu.addItem(it)
+        }
+    }
+
+    @objc private func pickPreset(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String,
+              let preset = Config.presets.first(where: { $0.name == name }) else { return }
+        if preset.pro && plan != "pro" { upgrade(); return }
+        switchPreset(preset)
+    }
+
+    private func switchPreset(_ preset: Config.Preset) {
+        currentPresetName = preset.name
+        // Preserve non-resolution settings (backend, save dir, upload toggle).
+        var newCfg = preset.config
+        newCfg.backendURL = config.backendURL
+        newCfg.saveDir = config.saveDir
+        newCfg.uploadOnClip = config.uploadOnClip
+        config = newCfg
+        Task { @MainActor in
+            try? await capture.stop()
+            buildPipeline()
+            startCapture(source: currentSource)
+            buildQualityMenu()
+            notify("Quality set", preset.name)
+        }
+    }
+
+    @objc private func upgrade() {
+        Task { @MainActor in
+            if let urlStr = (try? await clipsClient.checkoutURL()) ?? nil, let url = URL(string: urlStr) {
+                NSWorkspace.shared.open(url)
+            } else {
+                notify("Pro coming soon", "Billing isn't set up yet — 4K unlocks once it is.")
             }
         }
     }

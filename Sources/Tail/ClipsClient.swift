@@ -26,6 +26,28 @@ final class ClipsClient: @unchecked Sendable {
         return try JSONDecoder().decode(ListResponse.self, from: data).clips
     }
 
+    private struct AccountResp: Decodable { let plan: String }
+    func plan() async throws -> String {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/account"))
+        req.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        try Self.check(resp, data)
+        return try JSONDecoder().decode(AccountResp.self, from: data).plan
+    }
+
+    private struct CheckoutResp: Decodable { let url: String? }
+    // Returns a Stripe Checkout URL, or nil if billing not configured.
+    func checkoutURL() async throws -> String? {
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/checkout"))
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard let http = resp as? HTTPURLResponse else { return nil }
+        if http.statusCode == 503 { return nil } // billing not configured yet
+        try Self.check(resp, data)
+        return try JSONDecoder().decode(CheckoutResp.self, from: data).url
+    }
+
     func delete(_ id: String) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/clips/\(id)"))
         req.httpMethod = "DELETE"
