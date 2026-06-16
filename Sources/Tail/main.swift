@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var currentSource: CaptureSource?
     private var lastClipURL: URL?
     private let trimController = TrimWindowController()
+    private let libraryController = LibraryWindowController()
+    private var clipsClient: ClipsClient!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenu()
@@ -24,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         capture = CaptureEngine(config: config, encoder: encoder, buffer: buffer)
         uploader = Uploader(baseURL: config.backendURL)
+        clipsClient = ClipsClient(baseURL: config.backendURL)
         startCapture(source: nil)
         installHotkey()
         installDebugTrigger()
@@ -42,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 action: #selector(clip), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Trim & share last clip…",
                                 action: #selector(trimLast), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "My clips…", action: #selector(showLibrary), keyEquivalent: ""))
         menu.addItem(.separator())
         let srcItem = NSMenuItem(title: "Capture source", action: nil, keyEquivalent: "")
         srcItem.submenu = sourceMenu
@@ -128,6 +132,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self.notify("Upload failed", error.localizedDescription)
             }
         }
+    }
+
+    @objc private func showLibrary() {
+        libraryController.show(client: clipsClient)
     }
 
     @objc private func trimLast() {
