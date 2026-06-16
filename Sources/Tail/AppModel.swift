@@ -14,8 +14,9 @@ final class AppModel: ObservableObject {
     @Published var clipsRefreshToken = 0
 
     // Foreground game (detected) + capture settings shown in the top bar.
-    @Published var gameName = "Desktop"
+    @Published var gameName = "Waiting for game…"
     @Published var gameIcon: NSImage?
+    @Published var gameActive = false
     @Published var bufferSeconds = 30
     @Published var hotkeyLabel = "⌃⌥C"
     @Published var systemAudio = true

@@ -44,21 +44,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // Track the foreground app as the "game" (last non-Tail app shown in top bar).
+    private var currentGamePID: pid_t?
+
     private func setupGameDetection() {
         let nc = NSWorkspace.shared.notificationCenter
         nc.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
             guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
             self?.updateGame(app)
         }
-        if let front = NSWorkspace.shared.frontmostApplication { updateGame(front) }
+        nc.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            guard let self, let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            if app.processIdentifier == self.currentGamePID { self.clearGame() }
+        }
+        for app in NSWorkspace.shared.runningApplications where Self.isGame(app) { updateGame(app); break }
     }
 
     private func updateGame(_ app: NSRunningApplication) {
-        let id = app.bundleIdentifier ?? ""
-        let skip = ["com.tail.clipper", "com.apple.finder", "com.apple.dock", "com.apple.controlcenter"]
-        guard !skip.contains(id), let name = app.localizedName else { return }
+        guard Self.isGame(app), let name = app.localizedName else { return }
+        currentGamePID = app.processIdentifier
         model.gameName = name
         model.gameIcon = app.icon
+        model.gameActive = true
+    }
+
+    private func clearGame() {
+        currentGamePID = nil
+        model.gameName = "Waiting for game…"
+        model.gameIcon = nil
+        model.gameActive = false
+    }
+
+    // Heuristic: a game if its bundle category is games, or a known title — but
+    // not a store/launcher (those self-categorize as games).
+    private static let knownGames = ["roblox", "minecraft", "valorant", "league of legends",
+                                     "counter-strike", "fortnite", "overwatch", "apex", "dota"]
+    private static let launchers = ["epic games launcher", "steam", "battle.net", "ea app",
+                                    "ea desktop", "origin", "gog galaxy", "riot client",
+                                    "ubisoft connect", "rockstar games launcher", "playstation"]
+    private static func isGame(_ app: NSRunningApplication) -> Bool {
+        guard app.activationPolicy == .regular else { return false }
+        let id = (app.bundleIdentifier ?? "").lowercased()
+        let name = (app.localizedName ?? "").lowercased()
+        if id.hasPrefix("com.apple.") || id == "com.tail.clipper" { return false }
+        if launchers.contains(where: { name.contains($0) }) { return false }
+        if let url = app.bundleURL, let bundle = Bundle(url: url),
+           let cat = bundle.object(forInfoDictionaryKey: "LSApplicationCategoryType") as? String,
+           cat.lowercased().contains("games") { return true }
+        return knownGames.contains { name.contains($0) || id.contains($0) }
     }
 
     private func setupModel() {
@@ -251,7 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await self.log("flush failed (buffer empty or no keyframe yet)")
                 return
             }
-            let game = await MainActor.run { self.model.sourceLabel }
+            let game = await MainActor.run { self.model.gameActive ? self.model.gameName : self.model.sourceLabel }
             await MainActor.run {
                 self.lastClipURL = url
                 self.model.library?.add(url, game: game)   // show in library; link created on demand

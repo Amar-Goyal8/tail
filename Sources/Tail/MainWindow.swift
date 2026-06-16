@@ -89,18 +89,20 @@ private struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Detected game
+            // Detected game (or waiting)
             HStack(spacing: 9) {
                 Group {
                     if let icon = model.gameIcon {
                         Image(nsImage: icon).resizable().frame(width: 22, height: 22)
                     } else {
-                        Image(systemName: "gamecontroller.fill").foregroundStyle(Theme.primaryHi)
+                        Image(systemName: "gamecontroller").foregroundStyle(Theme.textFaint)
                     }
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("PLAYING").font(Theme.ui(9, .semibold)).tracking(1.5).foregroundStyle(Theme.textFaint)
-                    Text(model.gameName).font(Theme.ui(13, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
+                    Text(model.gameActive ? "PLAYING" : "STATUS").font(Theme.ui(9, .semibold)).tracking(1.5)
+                        .foregroundStyle(model.gameActive ? Theme.success : Theme.textFaint)
+                    Text(model.gameName).font(Theme.ui(13, .semibold))
+                        .foregroundStyle(model.gameActive ? Theme.text : Theme.textDim).lineLimit(1)
                 }
             }
             Spacer()
