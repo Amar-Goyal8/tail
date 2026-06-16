@@ -55,9 +55,11 @@ struct MainWindowView: View {
     @ObservedObject var model: AppModel
     @State private var tab: Tab = .clips
     enum Tab: String, CaseIterable, Identifiable {
-        case clips = "Clips", account = "Account"
+        case clips = "Clips", folders = "Folders", account = "Account"
         var id: String { rawValue }
-        var icon: String { self == .clips ? "square.grid.2x2.fill" : "person.fill" }
+        var icon: String {
+            switch self { case .clips: "square.grid.2x2.fill"; case .folders: "folder.fill"; case .account: "person.fill" }
+        }
     }
 
     var body: some View {
@@ -73,6 +75,7 @@ struct MainWindowView: View {
                         Group {
                             switch tab {
                             case .clips: ClipsPane(model: model)
+                            case .folders: FoldersPane(model: model)
                             case .account: AccountPane(model: model)
                             }
                         }
@@ -290,6 +293,17 @@ private struct ClipsPane: View {
     var body: some View {
         if let library = model.library {
             ClipLibraryView(model: model, library: library)
+        } else {
+            Text("Loading…").font(Theme.ui(14)).foregroundStyle(Theme.textDim)
+        }
+    }
+}
+
+private struct FoldersPane: View {
+    @ObservedObject var model: AppModel
+    var body: some View {
+        if let library = model.library {
+            FoldersView(model: model, library: library)
         } else {
             Text("Loading…").font(Theme.ui(14)).foregroundStyle(Theme.textDim)
         }
