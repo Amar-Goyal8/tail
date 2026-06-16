@@ -18,7 +18,7 @@ struct Config {
     // Backend for upload + share links. Override with TAIL_BACKEND_URL env var
     // (e.g. http://localhost:3000 for dev, or the deployed Vercel URL).
     var backendURL: URL = URL(string: ProcessInfo.processInfo.environment["TAIL_BACKEND_URL"]
-        ?? "http://localhost:3000")!
+        ?? "https://web-tau-green-87.vercel.app")!
     var uploadOnClip: Bool = true
 
     var bitrate: Int { bitrateMbps * 1_000_000 }
