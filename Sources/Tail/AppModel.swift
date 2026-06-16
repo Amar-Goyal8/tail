@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     @Published var micEnabled = false
     @Published var lastLink: String?
     @Published var statusText = "Ready"
+    @Published var clipsRefreshToken = 0
 
     // Wired by AppDelegate.
     var onClip: () -> Void = {}
@@ -21,4 +22,17 @@ final class AppModel: ObservableObject {
     var onUpgrade: () -> Void = {}
     var onOpenClipsFolder: () -> Void = {}
     var clipsClient: ClipsClient?
+
+    // Local library + on-demand share-link creation.
+    var library: LocalLibrary!
+    var uploader: Uploader?
+
+    // Upload the clip + create its share link (returns nil on failure).
+    func createLink(for clip: LocalClip) async -> String? {
+        guard let uploader, let library else { return nil }
+        let fileURL = library.url(for: clip)
+        guard let link = try? await uploader.upload(fileURL) else { return nil }
+        library.setLink(clip.id, link)
+        return link
+    }
 }

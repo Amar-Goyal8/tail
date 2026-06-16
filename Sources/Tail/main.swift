@@ -44,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupModel() {
         model.clipsClient = clipsClient
+        model.library = LocalLibrary(dir: config.saveDir)
+        model.uploader = uploader
         model.uploadOnClip = config.uploadOnClip
         model.micEnabled = config.micEnabled
         model.presetName = currentPresetName
@@ -114,10 +116,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(upgradeItem!)
         menu.addItem(NSMenuItem(title: "Refresh sources", action: #selector(refreshSources), keyEquivalent: ""))
         menu.addItem(.separator())
-        let up = NSMenuItem(title: "Upload + copy link on clip", action: #selector(toggleUpload), keyEquivalent: "")
-        up.state = config.uploadOnClip ? .on : .off
-        uploadItem = up
-        menu.addItem(up)
         let micItem = NSMenuItem(title: "Capture microphone", action: #selector(toggleMic), keyEquivalent: "")
         micItem.state = config.micEnabled ? .on : .off
         self.micItem = micItem
@@ -199,23 +197,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func clip() {
         let buffer = self.buffer!
         let dir = config.saveDir
-        let shouldUpload = config.uploadOnClip
-        let uploader = self.uploader!
         Task.detached {
             guard let url = buffer.flush(to: dir) else {
                 await self.log("flush failed (buffer empty or no keyframe yet)")
                 return
             }
-            await MainActor.run { self.lastClipURL = url }
-            await self.notify("Clip saved", url.lastPathComponent)
-            guard shouldUpload else { return }
-            do {
-                let link = try await uploader.upload(url)
-                await self.copyAndNotify(link)
-            } catch {
-                await self.log("upload failed: \(error.localizedDescription)")
-                await self.notify("Upload failed", error.localizedDescription)
+            await MainActor.run {
+                self.lastClipURL = url
+                self.model.library?.add(url)        // show in library; link created on demand
+                self.model.clipsRefreshToken += 1
             }
+            await self.notify("Clip saved", url.lastPathComponent)
         }
     }
 
@@ -287,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openMainWindow() { mainWindow.show(model: model) }
 
     @objc private func showLibrary() {
-        libraryController.show(client: clipsClient)
+        mainWindow.show(model: model) // main window has the Clips library
     }
 
     @objc private func showSettings() {
@@ -328,15 +320,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func trimAndShare(_ url: URL, start: Double, end: Double) {
-        let uploader = self.uploader!
         Task.detached {
             do {
                 let trimmed = try await Trimmer.trim(url, start: start, end: end)
-                await self.notify("Trimmed", "Uploading \(trimmed.lastPathComponent)…")
-                let link = try await uploader.upload(trimmed)
-                await self.copyAndNotify(link)
+                await MainActor.run {
+                    self.model.library?.add(trimmed)
+                    self.model.clipsRefreshToken += 1
+                }
+                await self.notify("Trimmed clip saved", "Create a link from your library to share.")
             } catch {
-                await self.log("trim/share failed: \(error.localizedDescription)")
+                await self.log("trim failed: \(error.localizedDescription)")
                 await self.notify("Trim failed", error.localizedDescription)
             }
         }
@@ -347,6 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSPasteboard.general.setString(link, forType: .string)
         log("share link copied: \(link)")
         model.lastLink = link
+        model.clipsRefreshToken += 1
         notify("Link copied to clipboard", link)
     }
 

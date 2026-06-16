@@ -75,21 +75,13 @@ private struct RecordPane: View {
                     }.padding(6)
                 }
 
-                GroupBox("Audio & sharing") {
+                GroupBox("Audio") {
                     VStack(alignment: .leading, spacing: 10) {
                         Toggle("Capture microphone", isOn: Binding(
                             get: { model.micEnabled }, set: { model.micEnabled = $0; model.onToggleMic($0) }))
-                        Toggle("Upload + copy link on clip", isOn: Binding(
-                            get: { model.uploadOnClip }, set: { model.uploadOnClip = $0; model.onToggleUpload($0) }))
                         Button("Open clips folder") { model.onOpenClipsFolder() }
-                        if let link = model.lastLink {
-                            HStack {
-                                Text(link).font(.caption).monospaced().lineLimit(1).truncationMode(.middle)
-                                Button("Copy") {
-                                    NSPasteboard.general.clearContents(); NSPasteboard.general.setString(link, forType: .string)
-                                }.font(.caption)
-                            }
-                        }
+                        Text("Clips save locally. Open Clips to watch and create a share link.")
+                            .font(.caption2).foregroundStyle(.secondary)
                     }.padding(6)
                 }
             }
@@ -101,10 +93,10 @@ private struct RecordPane: View {
 private struct ClipsPane: View {
     @ObservedObject var model: AppModel
     var body: some View {
-        if let client = model.clipsClient {
-            LibraryView(client: client)
+        if let library = model.library {
+            ClipLibraryView(model: model, library: library)
         } else {
-            Text("No backend configured").foregroundStyle(.secondary)
+            Text("Loading…").foregroundStyle(.secondary)
         }
     }
 }
