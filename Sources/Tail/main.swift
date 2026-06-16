@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let onboardingController = OnboardingWindowController()
     private var clipsClient: ClipsClient!
     private var micCapture: MicCapture?
+    private let model = AppModel()
+    private let mainWindow = MainWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMenu()
@@ -32,7 +34,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshSourceMenu()
         refreshPlan()
         buildQualityMenu()
-        onboardingController.showIfNeeded(openScreenRecording: openScreenRecordingSettings)
+        setupModel()
+        if OnboardingWindowController.hasOnboarded {
+            mainWindow.show(model: model)
+        } else {
+            onboardingController.showIfNeeded(openScreenRecording: openScreenRecordingSettings)
+        }
+    }
+
+    private func setupModel() {
+        model.clipsClient = clipsClient
+        model.uploadOnClip = config.uploadOnClip
+        model.micEnabled = config.micEnabled
+        model.presetName = currentPresetName
+        model.plan = plan
+        model.onClip = { [weak self] in self?.clip() }
+        model.onTrimLast = { [weak self] in self?.trimLast() }
+        model.onPickPreset = { [weak self] name in
+            guard let self, let p = Config.presets.first(where: { $0.name == name }) else { return }
+            if p.pro && self.plan != "pro" { self.upgrade(); return }
+            self.switchPreset(p)
+        }
+        model.onToggleUpload = { [weak self] on in
+            self?.config.uploadOnClip = on; self?.uploadItem?.state = on ? .on : .off
+        }
+        model.onToggleMic = { [weak self] on in
+            guard let self else { return }
+            self.config.micEnabled = on; self.micItem?.state = on ? .on : .off
+            if on { self.startMic() } else { self.micCapture?.stop(); self.micCapture = nil }
+        }
+        model.onUpgrade = { [weak self] in self?.upgrade() }
+        model.onOpenClipsFolder = { [weak self] in
+            guard let self else { return }
+            try? FileManager.default.createDirectory(at: self.config.saveDir, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(self.config.saveDir)
+        }
     }
 
     private func openScreenRecordingSettings() {
@@ -59,6 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "🎬"
         let menu = NSMenu()
+        menu.addItem(NSMenuItem(title: "Open Tail", action: #selector(openMainWindow), keyEquivalent: "o"))
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Clip last \(config.bufferSeconds)s (⌃⌥C)",
                                 action: #selector(clip), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Trim & share last clip…",
@@ -146,6 +184,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func startCapture(source: CaptureSource?) {
         currentSource = source
+        switch source {
+        case .window(let w): model.sourceLabel = w.title ?? "Window"
+        case .display: model.sourceLabel = "Display"
+        case .none: model.sourceLabel = "Main display"
+        }
         let capture = self.capture!
         Task { @MainActor in
             do { try await capture.start(source: source) }
@@ -187,6 +230,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             if let p = try? await clipsClient.plan() {
                 plan = p
+                model.plan = p
                 upgradeItem?.isHidden = (p == "pro")
                 buildQualityMenu()
             }
@@ -214,6 +258,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func switchPreset(_ preset: Config.Preset) {
         currentPresetName = preset.name
+        model.presetName = preset.name
         // Preserve non-resolution settings (backend, save dir, upload toggle).
         var newCfg = preset.config
         newCfg.backendURL = config.backendURL
@@ -238,6 +283,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+    @objc private func openMainWindow() { mainWindow.show(model: model) }
 
     @objc private func showLibrary() {
         libraryController.show(client: clipsClient)
@@ -299,6 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(link, forType: .string)
         log("share link copied: \(link)")
+        model.lastLink = link
         notify("Link copied to clipboard", link)
     }
 
@@ -345,5 +393,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 let app = NSApplication.shared
 let delegate = AppDelegate()
 app.delegate = delegate
-app.setActivationPolicy(.accessory) // menu-bar only, no dock icon
+app.setActivationPolicy(.regular) // real app: dock icon + main window (+ menu bar)
 app.run()

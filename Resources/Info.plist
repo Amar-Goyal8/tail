@@ -20,8 +20,6 @@
     <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
-    <key>LSUIElement</key>
-    <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Tail records your microphone to add your voice to clips when mic capture is on.</string>
     <key>NSHumanReadableCopyright</key>
