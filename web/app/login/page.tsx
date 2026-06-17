@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { browserClient } from "@/lib/supabase-browser";
 import { C, mono } from "@/lib/ui";
+import { TailMark } from "@/app/logo";
 
 export default function Login() {
   const supabase = browserClient();
@@ -23,8 +24,7 @@ export default function Login() {
     <main style={{ minHeight: "100vh", color: C.text, display: "flex", alignItems: "center", justifyContent: "center",
                    background: `radial-gradient(120% 70% at 50% -10%, #101319, ${C.bg} 60%)` }}>
       <div style={{ width: 320, display: "flex", flexDirection: "column", gap: 14, alignItems: "center" }}>
-        <div style={{ width: 52, height: 52, borderRadius: 15, background: "rgba(196,240,66,.12)",
-                      border: `1px solid rgba(196,240,66,.4)` }} />
+        <TailMark size={52} />
         <div style={{ fontWeight: 700, fontSize: 26, letterSpacing: 4 }}>TAIL</div>
         <div style={{ color: C.dim, fontSize: 13, textAlign: "center" }}>Sign in to view your clips.</div>
         <button onClick={() => oauth("discord")} style={primary}>Continue with Discord</button>

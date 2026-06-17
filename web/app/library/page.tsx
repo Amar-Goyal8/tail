@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { serverClient } from "@/lib/supabase-ssr";
 import { keys, publicUrl } from "@/lib/r2";
 import { C, mono } from "@/lib/ui";
+import { TailMark } from "@/app/logo";
 
 export const dynamic = "force-dynamic";
 
@@ -22,8 +23,7 @@ export default async function Library() {
       <nav style={{ maxWidth: 1100, margin: "0 auto", padding: "18px 22px",
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(196,240,66,.14)",
-                         border: `1px solid rgba(196,240,66,.4)`, display: "inline-block" }} />
+          <TailMark size={22} />
           <span style={{ fontWeight: 700, letterSpacing: 2 }}>TAIL</span>
         </div>
         <span style={{ font: `400 12px ${mono}`, color: C.dim }}>{user.email}</span>

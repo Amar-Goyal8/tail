@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { keys, publicUrl } from "@/lib/r2";
 import { supaAnon } from "@/lib/supabase";
 import { C, mono } from "@/lib/ui";
+import { TailMark } from "@/app/logo";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -48,8 +49,7 @@ export default async function ClipPage({ params }: Props) {
       <nav style={{ maxWidth: 1000, width: "100%", margin: "0 auto", padding: "18px 22px",
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <a href="/" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", color: C.text }}>
-          <span style={{ width: 22, height: 22, borderRadius: 6, background: "rgba(196,240,66,.14)",
-                         border: `1px solid rgba(196,240,66,.4)`, display: "inline-block" }} />
+          <TailMark size={22} />
           <span style={{ fontWeight: 700, letterSpacing: 2 }}>TAIL</span>
         </a>
         <a href="/" style={btn}>Get Tail — free</a>

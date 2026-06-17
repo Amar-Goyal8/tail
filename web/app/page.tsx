@@ -1,4 +1,5 @@
 import { C, mono } from "@/lib/ui";
+import { TailMark } from "./logo";
 
 const features = [
   ["Instant replay buffer", "Press ⌃⌥C — the last 30 seconds are saved. No hitting record, ever."],
@@ -9,18 +10,6 @@ const features = [
   ["Mic + game audio", "Capture desktop audio, your mic, or both — mixed into the clip."],
 ];
 
-function Reticle({ size = 34 }: { size?: number }) {
-  return (
-    <div style={{ width: size, height: size, borderRadius: size * 0.28, position: "relative",
-                  background: "rgba(196,240,66,.12)", border: "1px solid rgba(196,240,66,.4)",
-                  display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ width: size * 0.4, height: size * 0.4, borderRadius: "50%", border: "1.5px solid " + C.accent }} />
-      <div style={{ position: "absolute", width: size * 0.74, height: 1.5, background: "rgba(196,240,66,.4)" }} />
-      <div style={{ position: "absolute", height: size * 0.74, width: 1.5, background: "rgba(196,240,66,.4)" }} />
-    </div>
-  );
-}
-
 export default function Home() {
   return (
     <main style={{ minHeight: "100vh", color: C.text,
@@ -29,14 +18,15 @@ export default function Home() {
       <nav style={{ maxWidth: 1080, margin: "0 auto", padding: "22px 24px",
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <Reticle />
+          <TailMark size={30} />
           <span style={{ fontWeight: 700, fontSize: 19, letterSpacing: 3 }}>TAIL</span>
         </div>
         <a href="#download" style={btn(true)}>Download</a>
       </nav>
 
       {/* hero */}
-      <section style={{ maxWidth: 820, margin: "0 auto", padding: "70px 24px 30px", textAlign: "center" }}>
+      <section style={{ maxWidth: 820, margin: "0 auto", padding: "56px 24px 30px", textAlign: "center" }}>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 22 }}><TailMark size={72} /></div>
         <div style={{ font: `500 11px ${mono}`, letterSpacing: ".22em", color: C.faint, textTransform: "uppercase" }}>
           Clip capture for macOS
         </div>
