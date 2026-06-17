@@ -21,12 +21,14 @@ final class LocalLibrary: ObservableObject {
     @Published private(set) var clips: [LocalClip] = []
     @Published private(set) var folders: [String] = []
     private let dir: URL
-    private var indexURL: URL { dir.appendingPathComponent(".tail-clips.json") }
-    private var foldersURL: URL { dir.appendingPathComponent(".tail-folders.json") }
+    private let scope: String   // per-user so accounts on one Mac don't share clips
+    private var indexURL: URL { dir.appendingPathComponent(".tail-clips-\(scope).json") }
+    private var foldersURL: URL { dir.appendingPathComponent(".tail-folders-\(scope).json") }
     private var thumbs: [String: NSImage] = [:]
 
-    init(dir: URL) {
+    init(dir: URL, userId: String?) {
         self.dir = dir
+        self.scope = userId ?? "anon"
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         load()
     }

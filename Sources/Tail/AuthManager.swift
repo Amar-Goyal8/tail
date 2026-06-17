@@ -14,7 +14,9 @@ final class AuthManager: ObservableObject {
     @Published var email: String?
     @Published var loading = true
     @Published var identities: [UserIdentity] = []
+    @Published var userId: String?
     private(set) var accessToken: String?
+    var onUserChange: ((String?) -> Void)?
 
     // Providers currently linked to this account (e.g. ["google","discord"]).
     var linkedProviders: Set<String> { Set(identities.map(\.provider)) }
@@ -42,6 +44,11 @@ final class AuthManager: ObservableObject {
         accessToken = session?.accessToken
         email = session?.user.email
         signedIn = session != nil
+        let newId = session?.user.id.uuidString
+        if newId != userId {
+            userId = newId
+            onUserChange?(newId)
+        }
         if session != nil { Task { await loadIdentities() } } else { identities = [] }
     }
 
