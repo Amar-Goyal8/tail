@@ -1,6 +1,7 @@
 import Foundation
 import Supabase
 import AppKit
+import AuthenticationServices
 
 // Supabase auth for the desktop app. OAuth (Discord/Google) via web auth session,
 // email magic-link via the tail:// URL scheme. Session persisted by the SDK.
@@ -49,9 +50,16 @@ final class AuthManager: ObservableObject {
     }
 
     // Link another provider to the signed-in account (Discord <-> Google).
-    func link(_ provider: Provider) async throws {
-        try await client.auth.linkIdentity(provider: provider, redirectTo: URL(string: "tail://auth"))
-        await loadIdentities()
+    @Published var lastError: String?
+    func link(_ provider: Provider) async {
+        do {
+            FileHandle.standardError.write("[tail] linking \(provider)…\n".data(using: .utf8)!)
+            try await client.auth.linkIdentity(provider: provider, redirectTo: URL(string: "tail://auth"))
+            await loadIdentities()
+        } catch {
+            lastError = error.localizedDescription
+            FileHandle.standardError.write("[tail] link error: \(error)\n".data(using: .utf8)!)
+        }
     }
 
     func unlink(_ identity: UserIdentity) async throws {
@@ -60,9 +68,16 @@ final class AuthManager: ObservableObject {
     }
 
     // OAuth (Discord / Google) — opens a web auth session, returns on callback.
+    // Ephemeral session = no shared browser cookies, so it never silently resumes
+    // the last account; `prompt=select_account` makes Google show the chooser.
     func signIn(_ provider: Provider) async throws {
-        try await client.auth.signInWithOAuth(provider: provider,
-                                              redirectTo: URL(string: "tail://auth"))
+        try await client.auth.signInWithOAuth(
+            provider: provider,
+            redirectTo: URL(string: "tail://auth"),
+            queryParams: [("prompt", "select_account")]
+        ) { (session: ASWebAuthenticationSession) in
+            session.prefersEphemeralWebBrowserSession = true
+        }
         await refresh()
     }
 

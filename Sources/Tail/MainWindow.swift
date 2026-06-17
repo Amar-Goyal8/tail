@@ -372,7 +372,7 @@ private struct AccountPane: View {
                     }
                 }
             } else {
-                Button("Link") { Task { try? await auth.link(provider) } }
+                Button("Link") { Task { await auth.link(provider) } }
                     .buttonStyle(TailButtonStyle(kind: .ghost))
             }
         }
