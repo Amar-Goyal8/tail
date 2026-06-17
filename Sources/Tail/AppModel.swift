@@ -59,7 +59,7 @@ final class AppModel: ObservableObject {
     func createLink(for clip: LocalClip) async -> String? {
         guard let uploader, let library else { return nil }
         let fileURL = library.url(for: clip)
-        guard let link = try? await uploader.upload(fileURL) else { return nil }
+        guard let link = try? await uploader.upload(fileURL, game: clip.game) else { return nil }
         library.setLink(clip.id, link)
         return link
     }

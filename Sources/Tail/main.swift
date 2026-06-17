@@ -21,8 +21,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = AppModel()
     private let mainWindow = MainWindowController()
 
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme == "tail" { AuthManager.shared.handle(url: url) }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Theme.registerFonts()
+        Task { await AuthManager.shared.bootstrap() }
         setupMenu()
         uploader = Uploader(baseURL: config.backendURL)
         clipsClient = ClipsClient(baseURL: config.backendURL)

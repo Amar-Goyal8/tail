@@ -13,7 +13,11 @@ final class Uploader: @unchecked Sendable {
     struct UploadInit: Decodable { let id: String; let uploadUrl: String; let videoUrl: String }
     struct Finalized: Decodable { let id: String; let link: String }
 
-    func upload(_ file: URL) async throws -> String {
+    func upload(_ file: URL, game: String? = nil) async throws -> String {
+        guard let token = await AuthManager.shared.accessToken else {
+            throw NSError(domain: "tail.upload", code: 401,
+                          userInfo: [NSLocalizedDescriptionKey: "Sign in to share clips"])
+        }
         // 1. Ask backend for an id + presigned PUT URL.
         var initReq = URLRequest(url: baseURL.appendingPathComponent("api/upload"))
         initReq.httpMethod = "POST"
@@ -35,10 +39,10 @@ final class Uploader: @unchecked Sendable {
         var finReq = URLRequest(url: baseURL.appendingPathComponent("api/finalize"))
         finReq.httpMethod = "POST"
         finReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        finReq.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
-        finReq.httpBody = try JSONSerialization.data(withJSONObject: [
-            "id": info.id, "width": w, "height": h, "durationSec": dur,
-        ])
+        finReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        var meta: [String: Any] = ["id": info.id, "width": w, "height": h, "durationSec": dur]
+        if let game { meta["game"] = game }
+        finReq.httpBody = try JSONSerialization.data(withJSONObject: meta)
         let (finData, finResp) = try await URLSession.shared.data(for: finReq)
         try Self.check(finResp, finData)
         let done = try JSONDecoder().decode(Finalized.self, from: finData)

@@ -333,13 +333,12 @@ private struct AccountPane: View {
                 }.frame(height: 170)
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("ACCOUNT ID").font(Theme.ui(12, .semibold)).tracking(1.5).foregroundStyle(Theme.textDim)
+                    Text("SIGNED IN AS").font(Theme.mono(11, .medium)).tracking(1.5).foregroundStyle(Theme.textDim)
                     HStack {
-                        Text(String(Account.token.prefix(22)) + "…").font(Theme.ui(12)).foregroundStyle(Theme.text)
+                        Text(AuthManager.shared.email ?? "—").font(Theme.ui(13)).foregroundStyle(Theme.text)
                         Spacer()
-                        Button("Copy") {
-                            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(Account.token, forType: .string)
-                        }.buttonStyle(TailButtonStyle(kind: .ghost))
+                        Button("Sign out") { AuthManager.shared.signOut() }
+                            .buttonStyle(TailButtonStyle(kind: .ghost))
                     }
                 }.panel(18)
             }
@@ -359,8 +358,8 @@ final class MainWindowController {
         win.title = "Tail"
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
-        win.backgroundColor = NSColor(red: 0.043, green: 0.043, blue: 0.07, alpha: 1)
-        win.contentViewController = NSHostingController(rootView: MainWindowView(model: model))
+        win.backgroundColor = NSColor(red: 0.031, green: 0.035, blue: 0.04, alpha: 1)
+        win.contentViewController = NSHostingController(rootView: RootView(model: model))
         win.center(); win.isReleasedWhenClosed = false
         NSApp.activate(ignoringOtherApps: true)
         win.makeKeyAndOrderFront(nil)

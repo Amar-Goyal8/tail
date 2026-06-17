@@ -20,7 +20,7 @@ final class ClipsClient: @unchecked Sendable {
 
     func list() async throws -> [ClipSummary] {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/clips"))
-        req.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(await AuthManager.shared.accessToken ?? "")", forHTTPHeaderField: "Authorization")
         let (data, resp) = try await URLSession.shared.data(for: req)
         try Self.check(resp, data)
         return try JSONDecoder().decode(ListResponse.self, from: data).clips
@@ -29,7 +29,7 @@ final class ClipsClient: @unchecked Sendable {
     private struct AccountResp: Decodable { let plan: String }
     func plan() async throws -> String {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/account"))
-        req.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(await AuthManager.shared.accessToken ?? "")", forHTTPHeaderField: "Authorization")
         let (data, resp) = try await URLSession.shared.data(for: req)
         try Self.check(resp, data)
         return try JSONDecoder().decode(AccountResp.self, from: data).plan
@@ -40,7 +40,7 @@ final class ClipsClient: @unchecked Sendable {
     func checkoutURL() async throws -> String? {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/checkout"))
         req.httpMethod = "POST"
-        req.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(await AuthManager.shared.accessToken ?? "")", forHTTPHeaderField: "Authorization")
         let (data, resp) = try await URLSession.shared.data(for: req)
         guard let http = resp as? HTTPURLResponse else { return nil }
         if http.statusCode == 503 { return nil } // billing not configured yet
@@ -59,7 +59,7 @@ final class ClipsClient: @unchecked Sendable {
     func delete(_ id: String) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/clips/\(id)"))
         req.httpMethod = "DELETE"
-        req.setValue("Bearer \(Account.token)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(await AuthManager.shared.accessToken ?? "")", forHTTPHeaderField: "Authorization")
         let (data, resp) = try await URLSession.shared.data(for: req)
         try Self.check(resp, data)
     }
