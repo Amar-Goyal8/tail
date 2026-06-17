@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { putMeta, addUserClip, type ClipMeta } from "@/lib/r2";
 import { accountFrom } from "@/lib/auth";
+import { siteOrigin } from "@/lib/site";
 
 // Step 2: after the mp4 is uploaded, store metadata + return the share link.
 // If an account token is present, also index the clip under that account.
@@ -21,6 +22,6 @@ export async function POST(req: Request) {
   await putMeta(meta);
   if (accountId) await addUserClip(accountId, meta);
 
-  const origin = new URL(req.url).origin;
+  const origin = siteOrigin(req);
   return NextResponse.json({ id: meta.id, link: `${origin}/c/${meta.id}` });
 }

@@ -116,7 +116,7 @@ extension View {
     func panel(_ padding: CGFloat = 16) -> some View { modifier(PanelModifier(padding: padding)) }
 }
 
-// Crosshair / reticle logo mark.
+// Play-button-in-motion logo mark: solid head (now) + fading streaks (the buffer).
 struct ReticleMark: View {
     var size: CGFloat = 32
     var body: some View {
@@ -124,9 +124,28 @@ struct ReticleMark: View {
             RoundedRectangle(cornerRadius: size * 0.28)
                 .fill(Theme.accent.opacity(0.12))
                 .overlay(RoundedRectangle(cornerRadius: size * 0.28).stroke(Theme.accent.opacity(0.4)))
-            Circle().stroke(Theme.accent, lineWidth: 1.5).frame(width: size * 0.4, height: size * 0.4)
-            Rectangle().fill(Theme.accent.opacity(0.4)).frame(width: size * 0.75, height: 1.5)
-            Rectangle().fill(Theme.accent.opacity(0.4)).frame(width: 1.5, height: size * 0.75)
+            Canvas { ctx, sz in
+                let s = sz.width / 220.0
+                func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
+
+                var streak1 = Path()
+                streak1.move(to: p(40, 86)); streak1.addLine(to: p(64, 86))
+                streak1.addLine(to: p(57, 134)); streak1.addLine(to: p(33, 134)); streak1.closeSubpath()
+                ctx.fill(streak1, with: .color(Theme.accent.opacity(0.22)))
+
+                var streak2 = Path()
+                streak2.move(to: p(74, 80)); streak2.addLine(to: p(100, 80))
+                streak2.addLine(to: p(91, 140)); streak2.addLine(to: p(65, 140)); streak2.closeSubpath()
+                ctx.fill(streak2, with: .color(Theme.accent.opacity(0.5)))
+
+                var head = Path()
+                head.move(to: p(112, 73))
+                head.addCurve(to: p(178, 110), control1: p(150, 86), control2: p(168, 102))
+                head.addCurve(to: p(112, 147), control1: p(168, 118), control2: p(150, 134))
+                head.closeSubpath()
+                ctx.fill(head, with: .color(Theme.accent))
+            }
+            .frame(width: size, height: size)
         }
         .frame(width: size, height: size)
     }
