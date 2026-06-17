@@ -53,6 +53,19 @@ final class LocalLibrary: ObservableObject {
         clips[i].folder = folder; persist()
     }
 
+    func moveMany(_ ids: Set<String>, to folder: String?) {
+        for i in clips.indices where ids.contains(clips[i].id) { clips[i].folder = folder }
+        persist()
+    }
+
+    func deleteMany(_ ids: Set<String>) {
+        for clip in clips where ids.contains(clip.id) {
+            try? FileManager.default.removeItem(at: url(for: clip)); thumbs[clip.id] = nil
+        }
+        clips.removeAll { ids.contains($0.id) }
+        persist()
+    }
+
     func url(for clip: LocalClip) -> URL { dir.appendingPathComponent(clip.filename) }
 
     // Record a newly-saved clip (newest first).

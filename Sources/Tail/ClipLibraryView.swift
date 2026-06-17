@@ -23,6 +23,8 @@ struct ClipLibraryView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var library: LocalLibrary
     @State private var selectedIndex: Int?
+    @State private var selecting = false
+    @State private var selection: Set<String> = []
 
     private let columns = [GridItem(.adaptive(minimum: 280, maximum: 360), spacing: 18)]
 
@@ -35,25 +37,69 @@ struct ClipLibraryView: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text("CLIPS").font(Theme.display(30)).foregroundStyle(Theme.text)
-                        Text("\(library.clips.count)").font(Theme.ui(14, .semibold))
-                            .foregroundStyle(Theme.primaryHi)
-                            .padding(.horizontal, 8).padding(.vertical, 2)
-                            .background(Capsule().fill(Theme.primary.opacity(0.18)))
-                        Spacer()
-                    }
+                    header
                     LazyVGrid(columns: columns, spacing: 18) {
                         ForEach(Array(library.clips.enumerated()), id: \.element.id) { pair in
-                            ClipCard(model: model, library: library, clip: pair.element)
-                                .onTapGesture { selectedIndex = pair.offset }
+                            ClipCard(model: model, library: library, clip: pair.element,
+                                     selecting: selecting, isSelected: selection.contains(pair.element.id))
+                                .onTapGesture {
+                                    if selecting { toggle(pair.element.id) } else { selectedIndex = pair.offset }
+                                }
                         }
                     }
                 }
                 .padding(28)
             }
+            .overlay(alignment: .bottom) { if selecting { selectionBar } }
         }
     }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("CLIPS").font(Theme.display(30)).foregroundStyle(Theme.text)
+            Text("\(library.clips.count)").font(Theme.ui(14, .semibold))
+                .foregroundStyle(Theme.primaryHi)
+                .padding(.horizontal, 8).padding(.vertical, 2)
+                .background(Capsule().fill(Theme.primary.opacity(0.18)))
+            Spacer()
+            // select-mode toggle (circle)
+            Button { selecting.toggle(); if !selecting { selection.removeAll() } } label: {
+                Image(systemName: selecting ? "checkmark.circle.fill" : "circle.dashed")
+                    .font(.system(size: 20)).foregroundStyle(selecting ? Theme.primaryHi : Theme.textDim)
+            }.buttonStyle(.plain).help("Select multiple")
+        }
+    }
+
+    private var selectionBar: some View {
+        HStack(spacing: 12) {
+            Text("\(selection.count) selected").font(Theme.ui(13, .semibold)).foregroundStyle(Theme.text)
+            Spacer()
+            Menu {
+                Button("Unsorted") { library.moveMany(selection, to: nil); endSelect() }
+                ForEach(library.folders, id: \.self) { f in
+                    Button(f) { library.moveMany(selection, to: f); endSelect() }
+                }
+            } label: { Label("Move to", systemImage: "folder") }
+                .menuStyle(.borderlessButton).fixedSize()
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .background(Theme.elevated, in: Capsule()).overlay(Capsule().stroke(Theme.stroke))
+                .foregroundStyle(Theme.text).font(Theme.ui(13, .semibold))
+            Button { library.deleteMany(selection); endSelect() } label: {
+                Label("Delete", systemImage: "trash")
+            }.buttonStyle(TailButtonStyle(kind: .action)).disabled(selection.isEmpty)
+            Button("Done") { endSelect() }.buttonStyle(TailButtonStyle(kind: .ghost))
+        }
+        .padding(14)
+        .background(Theme.surface).overlay(RoundedRectangle(cornerRadius: Theme.R.lg).stroke(Theme.stroke))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.R.lg))
+        .shadow(color: .black.opacity(0.5), radius: 20, y: 6)
+        .padding(20)
+    }
+
+    private func toggle(_ id: String) {
+        if selection.contains(id) { selection.remove(id) } else { selection.insert(id) }
+    }
+    private func endSelect() { selecting = false; selection.removeAll() }
 
     private var emptyState: some View {
         VStack(spacing: 14) {
@@ -74,6 +120,8 @@ struct ClipCard: View {
     @ObservedObject var model: AppModel
     @ObservedObject var library: LocalLibrary
     let clip: LocalClip
+    var selecting = false
+    var isSelected = false
     @State private var thumb: NSImage?
     @State private var hover = false
 
@@ -90,25 +138,31 @@ struct ClipCard: View {
                 Image(systemName: "play.circle.fill")
                     .font(.system(size: 42)).foregroundStyle(.white.opacity(hover ? 0.95 : 0.0))
                     .shadow(radius: 8)
-                // top row: … menu (left) + link badge (right)
+                // top row: select circle / … menu (left) + link badge (right)
                 VStack {
                     HStack {
-                        Menu {
-                            Section("Move to") {
-                                Button("Unsorted") { library.move(clip.id, to: nil) }
-                                ForEach(library.folders, id: \.self) { f in
-                                    Button(f) { library.move(clip.id, to: f) }
+                        if selecting {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20)).foregroundStyle(isSelected ? Theme.primaryHi : .white)
+                                .background(Circle().fill(.black.opacity(0.4)).frame(width: 22, height: 22))
+                        } else {
+                            Menu {
+                                Section("Move to") {
+                                    Button("Unsorted") { library.move(clip.id, to: nil) }
+                                    ForEach(library.folders, id: \.self) { f in
+                                        Button(f) { library.move(clip.id, to: f) }
+                                    }
                                 }
+                                Divider()
+                                Button("Delete", role: .destructive) { library.delete(clip) }
+                            } label: {
+                                Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white).frame(width: 26, height: 26)
+                                    .background(.black.opacity(0.45), in: Circle())
                             }
-                            Divider()
-                            Button("Delete", role: .destructive) { library.delete(clip) }
-                        } label: {
-                            Image(systemName: "ellipsis").font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(.white).frame(width: 26, height: 26)
-                                .background(.black.opacity(0.45), in: Circle())
+                            .menuStyle(.borderlessButton).fixedSize().menuIndicator(.hidden)
+                            .opacity(hover ? 1 : 0)
                         }
-                        .menuStyle(.borderlessButton).fixedSize().menuIndicator(.hidden)
-                        .opacity(hover ? 1 : 0)
                         Spacer()
                         if clip.link != nil {
                             Image(systemName: "link").font(.caption2).foregroundStyle(.white).padding(5)
@@ -133,8 +187,10 @@ struct ClipCard: View {
             .background(Theme.card)
         }
         .clipShape(RoundedRectangle(cornerRadius: Theme.R.lg))
-        .overlay(RoundedRectangle(cornerRadius: Theme.R.lg).stroke(hover ? Theme.primary.opacity(0.5) : Theme.stroke))
-        .shadow(color: (hover ? Theme.primary : .black).opacity(hover ? 0.4 : 0.25), radius: hover ? 16 : 7, y: 5)
+        .overlay(RoundedRectangle(cornerRadius: Theme.R.lg)
+            .stroke(isSelected ? Theme.primaryHi : (hover ? Theme.primary.opacity(0.5) : Theme.stroke),
+                    lineWidth: isSelected ? 2 : 1))
+        .shadow(color: (hover || isSelected ? Theme.primary : .black).opacity(hover || isSelected ? 0.4 : 0.25), radius: hover ? 16 : 7, y: 5)
         .scaleEffect(hover ? 1.015 : 1)
         .animation(.easeOut(duration: 0.15), value: hover)
         .onHover { hover = $0 }

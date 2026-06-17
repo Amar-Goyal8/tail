@@ -18,8 +18,13 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 [ -f Resources/Tail.icns ] && cp Resources/Tail.icns "$APP/Contents/Resources/Tail.icns"
 [ -d Resources/fonts ] && cp -R Resources/fonts "$APP/Contents/Resources/fonts"
 
-echo "==> ad-hoc sign"
-codesign --force --deep --sign - "$APP"
+# Sign with the stable self-signed "Tail Self Signed" identity if present, so
+# the code identity (and thus the TCC Screen Recording grant) survives rebuilds.
+# Falls back to ad-hoc (-) which re-prompts for permission every build.
+IDENTITY=$(security find-identity -p codesigning 2>/dev/null | grep "Tail Self Signed" | head -1 | awk '{print $2}')
+SIGN_ID="${IDENTITY:--}"
+echo "==> sign ($SIGN_ID)"
+codesign --force --deep --sign "$SIGN_ID" "$APP"
 
 echo "==> launch"
 open "$APP"
