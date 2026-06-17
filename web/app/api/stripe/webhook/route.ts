@@ -1,9 +1,12 @@
 import { NextResponse } from "next/server";
 import { stripe } from "@/lib/stripe";
-import { setPlan } from "@/lib/r2";
+import { supaAdmin } from "@/lib/supabase";
 
-// Stripe webhook: on successful checkout / active subscription, mark the
-// account Pro; on cancellation, drop to free. Needs STRIPE_WEBHOOK_SECRET.
+async function setPlan(userId: string, plan: "free" | "pro") {
+  await supaAdmin().from("profiles").update({ plan }).eq("id", userId);
+}
+
+// Stripe webhook -> flip profiles.plan on checkout / cancellation.
 export async function POST(req: Request) {
   const s = stripe();
   const whSecret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -19,13 +22,12 @@ export async function POST(req: Request) {
   }
 
   if (event.type === "checkout.session.completed") {
-    const session = event.data.object as { metadata?: { accountId?: string }; client_reference_id?: string };
-    const accountId = session.metadata?.accountId ?? session.client_reference_id;
-    if (accountId) await setPlan(accountId, "pro");
+    const o = event.data.object as { metadata?: { userId?: string }; client_reference_id?: string };
+    const uid = o.metadata?.userId ?? o.client_reference_id;
+    if (uid) await setPlan(uid, "pro");
   } else if (event.type === "customer.subscription.deleted") {
-    const sub = event.data.object as { metadata?: { accountId?: string } };
-    const accountId = sub.metadata?.accountId;
-    if (accountId) await setPlan(accountId, "free");
+    const o = event.data.object as { metadata?: { userId?: string } };
+    if (o.metadata?.userId) await setPlan(o.metadata.userId, "free");
   }
   return NextResponse.json({ received: true });
 }
