@@ -174,16 +174,24 @@ struct ClipCard: View {
             }
             .frame(height: 165).clipped()
 
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(clip.link != nil ? "Shared clip" : "Local clip")
-                        .font(Theme.ui(13, .semibold)).foregroundStyle(Theme.text).lineLimit(1)
-                    Text(clip.createdAt.formatted(date: .abbreviated, time: .shortened))
-                        .font(Theme.ui(11)).foregroundStyle(Theme.textDim)
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(clip.game ?? "Clip").font(Theme.ui(13, .semibold))
+                        .foregroundStyle(Theme.text).lineLimit(1)
+                    Text("\(clip.game ?? "Unknown") · \(Self.relative(clip.createdAt))")
+                        .font(Theme.ui(11)).foregroundStyle(Theme.textDim).lineLimit(1)
                 }
-                Spacer()
+                Spacer(minLength: 6)
+                if let v = clip.views {
+                    HStack(spacing: 5) {
+                        Image(systemName: "eye").font(.system(size: 11))
+                        Text("\(v)").font(Theme.mono(11, .medium))
+                    }.foregroundStyle(Theme.textDim)
+                } else if clip.link == nil {
+                    Text("LOCAL").font(Theme.mono(10, .medium)).foregroundStyle(Theme.textFaint)
+                }
             }
-            .padding(12)
+            .padding(.horizontal, 13).padding(.vertical, 11)
             .background(Theme.card)
         }
         .clipShape(RoundedRectangle(cornerRadius: Theme.R.lg))
@@ -195,6 +203,11 @@ struct ClipCard: View {
         .animation(.easeOut(duration: 0.15), value: hover)
         .onHover { hover = $0 }
         .task(id: clip.id) { thumb = await library.thumbnail(for: clip) }
+    }
+
+    static func relative(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter(); f.unitsStyle = .abbreviated
+        return f.localizedString(for: date, relativeTo: Date())
     }
 }
 

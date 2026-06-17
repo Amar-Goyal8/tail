@@ -106,8 +106,8 @@ private struct TopBar: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(model.gameActive ? "PLAYING" : "STATUS").font(Theme.ui(9, .semibold)).tracking(1.5)
-                        .foregroundStyle(model.gameActive ? Theme.success : Theme.textFaint)
+                    Text(model.gameActive ? "ARMED" : "IDLE").font(Theme.mono(9, .medium)).tracking(2)
+                        .foregroundStyle(model.gameActive ? Theme.accent : Theme.textFaint)
                     Text(model.gameName).font(Theme.ui(13, .semibold))
                         .foregroundStyle(model.gameActive ? Theme.text : Theme.textDim).lineLimit(1)
                 }
@@ -174,12 +174,9 @@ private struct Sidebar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             // Wordmark
-            HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 9).fill(Theme.violetGrad).frame(width: 30, height: 30)
-                    Image(systemName: "play.fill").font(.system(size: 13, weight: .black)).foregroundStyle(.white)
-                }
-                Text("TAIL").font(Theme.display(20)).foregroundStyle(Theme.text).tracking(1)
+            HStack(spacing: 11) {
+                ReticleMark(size: 32)
+                Text("TAIL").font(Theme.display(20)).foregroundStyle(Theme.text).tracking(3)
             }
             .padding(.horizontal, 16).padding(.top, 22).padding(.bottom, 18)
 
@@ -193,7 +190,7 @@ private struct Sidebar: View {
             HStack(spacing: 8) {
                 Circle().fill(model.plan == "pro" ? Theme.success : Theme.textFaint).frame(width: 7, height: 7)
                 Text(model.plan == "pro" ? "TAIL PRO" : "FREE PLAN")
-                    .font(Theme.ui(11, .semibold)).tracking(1).foregroundStyle(Theme.textDim)
+                    .font(Theme.mono(11, .medium)).tracking(1.5).foregroundStyle(Theme.textDim)
             }
             .padding(.horizontal, 18).padding(.bottom, 18)
         }
