@@ -12,7 +12,11 @@ final class AuthManager: ObservableObject {
     @Published var signedIn = false
     @Published var email: String?
     @Published var loading = true
+    @Published var identities: [UserIdentity] = []
     private(set) var accessToken: String?
+
+    // Providers currently linked to this account (e.g. ["google","discord"]).
+    var linkedProviders: Set<String> { Set(identities.map(\.provider)) }
 
     private init() {
         client = SupabaseClient(
@@ -37,6 +41,22 @@ final class AuthManager: ObservableObject {
         accessToken = session?.accessToken
         email = session?.user.email
         signedIn = session != nil
+        if session != nil { Task { await loadIdentities() } } else { identities = [] }
+    }
+
+    func loadIdentities() async {
+        identities = (try? await client.auth.userIdentities()) ?? []
+    }
+
+    // Link another provider to the signed-in account (Discord <-> Google).
+    func link(_ provider: Provider) async throws {
+        try await client.auth.linkIdentity(provider: provider, redirectTo: URL(string: "tail://auth"))
+        await loadIdentities()
+    }
+
+    func unlink(_ identity: UserIdentity) async throws {
+        try await client.auth.unlinkIdentity(identity)
+        await loadIdentities()
     }
 
     // OAuth (Discord / Google) — opens a web auth session, returns on callback.

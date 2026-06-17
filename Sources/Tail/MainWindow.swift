@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import AVKit
+import Supabase
 import Carbon.HIToolbox
 
 // Captures a keystroke and reports it as a Carbon hotkey (keyCode + modifiers).
@@ -309,6 +310,7 @@ private struct FoldersPane: View {
 
 private struct AccountPane: View {
     @ObservedObject var model: AppModel
+    @ObservedObject private var auth = AuthManager.shared
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
@@ -335,14 +337,44 @@ private struct AccountPane: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("SIGNED IN AS").font(Theme.mono(11, .medium)).tracking(1.5).foregroundStyle(Theme.textDim)
                     HStack {
-                        Text(AuthManager.shared.email ?? "—").font(Theme.ui(13)).foregroundStyle(Theme.text)
+                        Text(auth.email ?? "—").font(Theme.ui(13)).foregroundStyle(Theme.text)
                         Spacer()
-                        Button("Sign out") { AuthManager.shared.signOut() }
-                            .buttonStyle(TailButtonStyle(kind: .ghost))
+                        Button("Sign out") { auth.signOut() }.buttonStyle(TailButtonStyle(kind: .ghost))
                     }
+                }.panel(18)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("CONNECTIONS").font(Theme.mono(11, .medium)).tracking(1.5).foregroundStyle(Theme.textDim)
+                    connectionRow("Discord", icon: "bubble.left.fill", key: "discord", provider: .discord)
+                    connectionRow("Google", icon: "globe", key: "google", provider: .google)
                 }.panel(18)
             }
             .padding(28).frame(maxWidth: 560, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .task { await auth.loadIdentities() }
+    }
+
+    @ViewBuilder
+    private func connectionRow(_ name: String, icon: String, key: String, provider: Provider) -> some View {
+        let linked = auth.linkedProviders.contains(key)
+        HStack(spacing: 11) {
+            Image(systemName: icon).font(.system(size: 14)).foregroundStyle(linked ? Theme.accent : Theme.textDim)
+                .frame(width: 20)
+            Text(name).font(Theme.ui(13, .medium)).foregroundStyle(Theme.text)
+            Spacer()
+            if linked {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.accent)
+                    Text("Connected").font(Theme.ui(12)).foregroundStyle(Theme.textDim)
+                    if auth.identities.count > 1, let id = auth.identities.first(where: { $0.provider == key }) {
+                        Button("Unlink") { Task { try? await auth.unlink(id) } }
+                            .buttonStyle(.plain).font(Theme.ui(11)).foregroundStyle(Theme.live)
+                    }
+                }
+            } else {
+                Button("Link") { Task { try? await auth.link(provider) } }
+                    .buttonStyle(TailButtonStyle(kind: .ghost))
+            }
         }
     }
 }
