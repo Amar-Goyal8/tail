@@ -100,13 +100,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupModel() {
         model.clipsClient = clipsClient
         model.library = LocalLibrary(dir: config.saveDir, userId: AuthManager.shared.userId)
+        model.library?.client = clipsClient
         model.uploader = uploader
         // Rebuild the per-user library when the signed-in account changes.
         AuthManager.shared.onUserChange = { [weak self] uid in
             guard let self else { return }
-            self.model.library = LocalLibrary(dir: self.config.saveDir, userId: uid)
+            let lib = LocalLibrary(dir: self.config.saveDir, userId: uid)
+            lib.client = self.clipsClient
+            self.model.library = lib
             self.model.clipsRefreshToken += 1
             self.refreshPlan()
+            Task { await lib.syncCloud() }
         }
         model.bufferSeconds = config.bufferSeconds
         model.systemAudio = config.systemAudioEnabled

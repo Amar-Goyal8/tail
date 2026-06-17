@@ -34,6 +34,7 @@ struct ClipLibraryView: View {
                        onExit: { selectedIndex = nil })
         } else if library.clips.isEmpty {
             emptyState.frame(maxWidth: .infinity, maxHeight: .infinity)
+                .task { await library.syncCloud() }
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
@@ -51,6 +52,7 @@ struct ClipLibraryView: View {
                 .padding(28)
             }
             .overlay(alignment: .bottom) { if selecting { selectionBar } }
+            .task { await library.syncCloud() }
         }
     }
 

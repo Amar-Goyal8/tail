@@ -11,7 +11,9 @@ struct LocalClip: Codable, Identifiable, Sendable {
     var desc: String?          // user description
     var views: Int?            // fetched from backend when shared
     var folder: String?        // organizing folder (nil = unsorted)
+    var remoteURL: String?     // cloud video URL (set for clips synced from the backend)
     var id: String { filename }
+    var synced: Bool { link != nil }
 }
 
 // Tracks clips saved to disk + their (optional) share links. Persists an index
@@ -68,7 +70,40 @@ final class LocalLibrary: ObservableObject {
         persist()
     }
 
-    func url(for clip: LocalClip) -> URL { dir.appendingPathComponent(clip.filename) }
+    var client: ClipsClient?   // set by AppModel; enables cloud sync
+
+    // Local file if present, else the cloud URL (clips synced from another device).
+    func url(for clip: LocalClip) -> URL {
+        let f = dir.appendingPathComponent(clip.filename)
+        if FileManager.default.fileExists(atPath: f.path) { return f }
+        if let r = clip.remoteURL, let u = URL(string: r) { return u }
+        return f
+    }
+
+    func hasLocalFile(_ clip: LocalClip) -> Bool {
+        FileManager.default.fileExists(atPath: dir.appendingPathComponent(clip.filename).path)
+    }
+
+    // Merge the user's cloud clips into the list (cloud-only ones appear as entries
+    // with a remoteURL). Updates view counts on already-local synced clips.
+    func syncCloud() async {
+        guard let client, let cloud = try? await client.list() else { return }
+        let localCloudIds = Set(clips.compactMap { $0.link.flatMap(Self.idFromLink) })
+        for i in clips.indices {
+            if let lid = clips[i].link.flatMap(Self.idFromLink),
+               let c = cloud.first(where: { $0.id == lid }) { clips[i].views = c.views }
+        }
+        for c in cloud where !localCloudIds.contains(c.id) && !clips.contains(where: { $0.id == c.id }) {
+            clips.append(LocalClip(filename: c.id, createdAt: Self.parseDate(c.createdAt),
+                                   link: c.link, game: c.game, desc: nil, views: c.views,
+                                   folder: nil, remoteURL: c.videoUrl))
+        }
+        clips.sort { $0.createdAt > $1.createdAt }
+        persist()
+    }
+
+    static func idFromLink(_ link: String) -> String? { link.split(separator: "/").last.map(String.init) }
+    static func parseDate(_ s: String) -> Date { ISO8601DateFormatter().date(from: s) ?? Date() }
 
     // Record a newly-saved clip (newest first).
     func add(_ fileURL: URL, game: String? = nil) {
@@ -98,7 +133,13 @@ final class LocalLibrary: ObservableObject {
     }
 
     func delete(_ clip: LocalClip) {
-        try? FileManager.default.removeItem(at: url(for: clip))
+        // remove local file (only if it's a real file, not a remote URL)
+        let f = dir.appendingPathComponent(clip.filename)
+        try? FileManager.default.removeItem(at: f)
+        // remove from cloud if it was uploaded
+        if let cid = clip.link.flatMap(Self.idFromLink) ?? (clip.remoteURL != nil ? clip.filename : nil) {
+            Task { try? await client?.delete(cid) }
+        }
         clips.removeAll { $0.id == clip.id }
         thumbs[clip.id] = nil
         persist()

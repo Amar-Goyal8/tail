@@ -4,12 +4,22 @@ import Foundation
 struct ClipSummary: Decodable, Identifiable, Sendable {
     let id: String
     let title: String?
-    let width: Int
-    let height: Int
-    let durationSec: Double
+    let game: String?
+    let width: Int?
+    let height: Int?
+    let durationSec: Double?
+    let views: Int?
+    let folderId: String?
     let createdAt: String
     let link: String
     let videoUrl: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, game, width, height, views, link, videoUrl
+        case durationSec = "duration_sec"
+        case folderId = "folder_id"
+        case createdAt = "created_at"
+    }
 }
 
 final class ClipsClient: @unchecked Sendable {
